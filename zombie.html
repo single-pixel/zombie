@@ -19,13 +19,16 @@
       position: absolute;
       left: 0;
       top: 0;
-      background: #222; /* Slightly darker ground */
-      border: 8px solid #444;
+      background: #3d1f14; /* Dark rust base */
+      border: 8px solid #2a150e;
       box-sizing: border-box;
       background-image: 
-        linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
-      background-size: 50px 50px; /* Grid pattern */
+        radial-gradient(circle at 25% 25%, rgba(139, 69, 19, 0.15) 0%, transparent 50%),
+        radial-gradient(circle at 75% 75%, rgba(160, 82, 45, 0.15) 0%, transparent 50%),
+        linear-gradient(rgba(0,0,0,0.2) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.2) 1px, transparent 1px);
+      background-size: 600px 600px, 600px 600px, 50px 50px, 50px 50px; /* Mottled rust with grid */
+      will-change: transform;
     }
 
     /* CROSSHAIR */
@@ -36,6 +39,7 @@
       pointer-events: none;
       z-index: 2000;
       transform: translate(-50%, -50%);
+      will-change: left, top;
     }
 
     #crosshair::before, #crosshair::after {
@@ -61,6 +65,7 @@
       background: rgba(0, 255, 0, 0.2); /* Faint green glow base */
       border-radius: 50%;
       box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
+      will-change: left, top;
     }
 
     /* ZOMBIE */
@@ -157,23 +162,6 @@
     #death-screen p {
       font-size: 24px;
     }
-
-    /* FLOATING TEXT */
-    .floating-text {
-      position: absolute;
-      color: #ff3333;
-      font-weight: bold;
-      font-size: 20px;
-      pointer-events: none;
-      z-index: 1500;
-      animation: floatUp 0.6s ease-out forwards;
-      text-shadow: 2px 2px black;
-    }
-
-    @keyframes floatUp {
-      0% { transform: translateY(0); opacity: 1; }
-      100% { transform: translateY(-50px); opacity: 0; }
-    }
   </style>
 </head>
 
@@ -210,6 +198,8 @@ let highscore = localStorage.getItem("zombieHighScore") || 0;
 let player = {
   x: 1000,
   y: 1000,
+  vx: 0,
+  vy: 0,
   hp: 8
 };
 
@@ -252,24 +242,91 @@ function playGunshot() {
   noiseSource.stop(audioCtx.currentTime + duration);
 }
 
-function showOw(x, y) {
-  const ow = document.createElement("div");
-  ow.className = "floating-text";
-  ow.innerText = "OW!";
-  ow.style.left = x + "px";
-  ow.style.top = y + "px";
-  world.appendChild(ow);
-  setTimeout(() => ow.remove(), 600);
+let lastPunchTime = 0;
+function playPunchSound() {
+  const now = Date.now();
+  if (now - lastPunchTime < 150) return; // Don't play too often
+  lastPunchTime = now;
+
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  
+  const duration = 0.15;
+  const oscillator = audioCtx.createOscillator();
+  const gainNode = audioCtx.createGain();
+  
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(150, audioCtx.currentTime);
+  oscillator.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + duration);
+  
+  gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+  gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+  
+  oscillator.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+  
+  oscillator.start();
+  oscillator.stop(audioCtx.currentTime + duration);
+
+  // Add a bit of "crunch" with noise
+  const noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.05, audioCtx.sampleRate);
+  const output = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < audioCtx.sampleRate * 0.05; i++) output[i] = Math.random() * 0.5;
+  const noiseSource = audioCtx.createBufferSource();
+  noiseSource.buffer = noiseBuffer;
+  const noiseGain = audioCtx.createGain();
+  noiseGain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+  noiseSource.connect(noiseGain);
+  noiseGain.connect(audioCtx.destination);
+  noiseSource.start();
 }
+
+function speakOw() {
+  const utterance = new SpeechSynthesisUtterance("ow");
+  const voices = window.speechSynthesis.getVoices();
+  
+  // Try to find a male-sounding voice
+  const maleVoice = voices.find(v => 
+    v.name.includes("Male") || 
+    v.name.includes("David") || 
+    v.name.includes("Google US English") ||
+    v.name.includes("Alex")
+  );
+  
+  if (maleVoice) utterance.voice = maleVoice;
+  utterance.pitch = 0.5; // Slightly lower for a more guttural sound
+  utterance.rate = 1.8;  // Faster for a sharp cry
+  window.speechSynthesis.speak(utterance);
+}
+
+function speakDeathScream() {
+  const utterance = new SpeechSynthesisUtterance("ahhh!");
+  const voices = window.speechSynthesis.getVoices();
+  const maleVoice = voices.find(v => 
+    v.name.includes("Male") || v.name.includes("David") || v.name.includes("Alex")
+  );
+  if (maleVoice) utterance.voice = maleVoice;
+  utterance.pitch = 0.4; 
+  utterance.rate = 1.4;  // Sharp shout
+  window.speechSynthesis.speak(utterance);
+}
+
+let mouseX = 0;
+let mouseY = 0;
+let crossX = 0;
+let crossY = 0;
 
 /* INPUT */
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 window.addEventListener("mousemove", (e) => {
-  crosshair.style.left = e.clientX + "px";
-  crosshair.style.top = e.clientY + "px";
+  mouseX = e.clientX;
+  mouseY = e.clientY;
 });
 window.addEventListener("resize", updateCamera);
+
+let camX = 0;
+let camY = 0;
 
 /* PLAYER SETUP */
 const playerEl = document.createElement("div");
@@ -307,12 +364,28 @@ function spawnZombie() {
 for (let i = 0; i < 15; i++) spawnZombie();
 
 /* PLAYER MOVEMENT */
-function movePlayer() {
-  const speed = 5;
-  if (keys["w"]) player.y -= speed;
-  if (keys["s"]) player.y += speed;
-  if (keys["a"]) player.x -= speed;
-  if (keys["d"]) player.x += speed;
+function movePlayer(dt) {
+  const accel = 1.5;
+  const friction = 0.85;
+  
+  let dx = 0;
+  let dy = 0;
+  if (keys["w"]) dy -= 1;
+  if (keys["s"]) dy += 1;
+  if (keys["a"]) dx -= 1;
+  if (keys["d"]) dx += 1;
+
+  if (dx !== 0 || dy !== 0) {
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    player.vx += (dx / dist) * accel * dt;
+    player.vy += (dy / dist) * accel * dt;
+  }
+
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
+
+  player.vx *= Math.pow(friction, dt);
+  player.vy *= Math.pow(friction, dt);
 
   // Boundary checks (accounting for 8px border and player size)
   player.x = Math.max(0, Math.min(1945, player.x));
@@ -320,11 +393,31 @@ function movePlayer() {
 }
 
 /* CAMERA SYSTEM */
-function updateCamera() {
-  // Center screen on player's center (22 is half of 44px player size)
-  const camX = window.innerWidth / 2 - (player.x + 22 + 8);
-  const camY = window.innerHeight / 2 - (player.y + 22 + 8);
+function updateCamera(dt) {
+  // Target screen center on player's center (22 is half of 44px player size)
+  const targetX = window.innerWidth / 2 - (player.x + 22 + 8);
+  const targetY = window.innerHeight / 2 - (player.y + 22 + 8);
+  
+  // Smoothly interpolate camera position (lerp)
+  if (camX === 0 && camY === 0) {
+    camX = targetX;
+    camY = targetY;
+  } else {
+    camX += (targetX - camX) * (1 - Math.pow(0.05, dt/10));
+    camY += (targetY - camY) * (1 - Math.pow(0.05, dt/10));
+  }
+  
   world.style.transform = `translate(${camX}px, ${camY}px)`;
+}
+
+/* CROSSHAIR SYSTEM */
+function updateCrosshair(dt) {
+  // Instant snap to mouse position
+  crossX = mouseX;
+  crossY = mouseY;
+  
+  crosshair.style.left = crossX + "px";
+  crosshair.style.top = crossY + "px";
 }
 
 /* RENDERING */
@@ -334,11 +427,14 @@ function renderPlayer() {
 }
 
 /* ZOMBIE LOGIC */
-function updateZombies() {
-  const zombieSpeed = 0.2 + (wave * 0.05);
+function updateZombies(dt) {
+  if (player.hp <= 0) return;
+  const zombieSpeed = (0.8 + (wave * 0.1)) * dt;
+  const now = Date.now();
 
   for (let i = zombies.length - 1; i >= 0; i--) {
     const z = zombies[i];
+    if (!z.lastHit) z.lastHit = 0;
 
     // Target player center (22 for player center, 20 for zombie center)
     const dx = (player.x + 22) - (z.x + 20);
@@ -353,14 +449,18 @@ function updateZombies() {
     z.style.left = z.x + "px";
     z.style.top = z.y + "px";
 
-    // Damage player
-    if (dist < 32) player.hp -= 0.01;
+    // Damage player: 5 hits to kill (each hit does 1.6 damage since max HP is 8)
+    if (dist < 35 && now - z.lastHit > 600) {
+      player.hp -= 1.6;
+      z.lastHit = now;
+      playPunchSound();
+    }
 
     // HP bar update
     z.bar.style.width = (Math.max(0, z.hp) / 3 * 24) + "px";
 
     if (z.hp <= 0) {
-      showOw(z.x, z.y);
+      speakOw();
       z.remove();
       zombies.splice(i, 1);
       
@@ -382,16 +482,14 @@ document.addEventListener("mousedown", (e) => {
   if (player.hp <= 0) return;
   playGunshot();
   let hit = false;
-
-  const camX = window.innerWidth / 2 - (player.x + 22 + 8);
-  const camY = window.innerHeight / 2 - (player.y + 22 + 8);
   
-  const mouseX = e.clientX - camX - 8;
-  const mouseY = e.clientY - camY - 8;
+  // Use current crosshair position for shooting accuracy
+  const shotX = crossX - camX - 8;
+  const shotY = crossY - camY - 8;
 
   zombies.forEach(z => {
-    const dx = (z.x + 20) - mouseX;
-    const dy = (z.y + 20) - mouseY;
+    const dx = (z.x + 20) - shotX;
+    const dy = (z.y + 20) - shotY;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist < 35) {
@@ -406,8 +504,8 @@ document.addEventListener("mousedown", (e) => {
     const b = document.createElement("div");
     b.className = "bullet";
     b.innerText = "🟡";
-    b.style.left = (mouseX - 5) + "px";
-    b.style.top = (mouseY - 5) + "px";
+    b.style.left = (shotX - 5) + "px";
+    b.style.top = (shotY - 5) + "px";
     world.appendChild(b);
     setTimeout(() => b.remove(), 400);
   }
@@ -417,7 +515,13 @@ document.addEventListener("mousedown", (e) => {
 function updateHP() {
   document.getElementById("hp").style.width = (Math.max(0, player.hp) / 8 * 200) + "px";
 
-  if (player.hp <= 0) {
+  if (player.hp <= 0 && document.getElementById("death-screen").style.display !== "flex") {
+    speakDeathScream();
+    
+    // Clear zombies on death
+    zombies.forEach(z => z.remove());
+    zombies = [];
+    
     if (score > highscore) {
       localStorage.setItem("zombieHighScore", score);
       highscore = score;
@@ -431,16 +535,22 @@ function updateHP() {
 }
 
 /* GAME LOOP */
-function loop() {
-  movePlayer();
-  updateZombies();
-  updateCamera();
+let lastTime = 0;
+function loop(timestamp) {
+  if (!lastTime) lastTime = timestamp;
+  const dt = (timestamp - lastTime) / 16.67; // Normalize to 60fps
+  lastTime = timestamp;
+
+  movePlayer(dt);
+  updateZombies(dt);
+  updateCamera(dt);
+  updateCrosshair(dt);
   renderPlayer();
   updateHP();
   requestAnimationFrame(loop);
 }
 
-loop();
+requestAnimationFrame(loop);
 </script>
 
 </body>
