@@ -49,15 +49,18 @@
 
     /* PLAYER */
     .player {
-      width: 40px;
-      height: 40px;
+      width: 44px;
+      height: 44px;
       position: absolute;
-      font-size: 32px;
+      font-size: 36px;
       display: flex;
       align-items: center;
       justify-content: center;
-      z-index: 100; /* Ensure player is above zombies */
+      z-index: 999; /* Absolute top */
       pointer-events: none;
+      background: rgba(0, 255, 0, 0.2); /* Faint green glow base */
+      border-radius: 50%;
+      box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
     }
 
     /* ZOMBIE */
@@ -154,6 +157,23 @@
     #death-screen p {
       font-size: 24px;
     }
+
+    /* FLOATING TEXT */
+    .floating-text {
+      position: absolute;
+      color: #ff3333;
+      font-weight: bold;
+      font-size: 20px;
+      pointer-events: none;
+      z-index: 1500;
+      animation: floatUp 0.6s ease-out forwards;
+      text-shadow: 2px 2px black;
+    }
+
+    @keyframes floatUp {
+      0% { transform: translateY(0); opacity: 1; }
+      100% { transform: translateY(-50px); opacity: 0; }
+    }
   </style>
 </head>
 
@@ -195,6 +215,53 @@ let player = {
 
 document.getElementById("highscore").innerText = highscore;
 
+/* AUDIO SYSTEM */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playGunshot() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  
+  const duration = 0.3;
+  const oscillator = audioCtx.createOscillator();
+  const gainNode = audioCtx.createGain();
+  const noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * duration, audioCtx.sampleRate);
+  const output = noiseBuffer.getChannelData(0);
+  
+  // Create white noise for the 'crack' of the gun
+  for (let i = 0; i < audioCtx.sampleRate * duration; i++) {
+    output[i] = Math.random() * 2 - 1;
+  }
+  
+  const noiseSource = audioCtx.createBufferSource();
+  noiseSource.buffer = noiseBuffer;
+  
+  // Filter to make it sound more like a gunshot
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(1000, audioCtx.currentTime);
+  filter.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + duration);
+
+  gainNode.gain.setValueAtTime(0.8, audioCtx.currentTime);
+  gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+
+  noiseSource.connect(filter);
+  filter.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+  
+  noiseSource.start();
+  noiseSource.stop(audioCtx.currentTime + duration);
+}
+
+function showOw(x, y) {
+  const ow = document.createElement("div");
+  ow.className = "floating-text";
+  ow.innerText = "OW!";
+  ow.style.left = x + "px";
+  ow.style.top = y + "px";
+  world.appendChild(ow);
+  setTimeout(() => ow.remove(), 600);
+}
+
 /* INPUT */
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
@@ -207,7 +274,7 @@ window.addEventListener("resize", updateCamera);
 /* PLAYER SETUP */
 const playerEl = document.createElement("div");
 playerEl.className = "player";
-playerEl.innerText = "🧍";
+playerEl.innerText = "🤠"; // Using Cowboy emoji for better visibility
 world.appendChild(playerEl);
 
 /* ZOMBIES */
@@ -248,15 +315,15 @@ function movePlayer() {
   if (keys["d"]) player.x += speed;
 
   // Boundary checks (accounting for 8px border and player size)
-  player.x = Math.max(0, Math.min(1950, player.x));
-  player.y = Math.max(0, Math.min(1950, player.y));
+  player.x = Math.max(0, Math.min(1945, player.x));
+  player.y = Math.max(0, Math.min(1945, player.y));
 }
 
 /* CAMERA SYSTEM */
 function updateCamera() {
-  // Center screen on player's center (20 is half of 40px player size)
-  const camX = window.innerWidth / 2 - (player.x + 20 + 8);
-  const camY = window.innerHeight / 2 - (player.y + 20 + 8);
+  // Center screen on player's center (22 is half of 44px player size)
+  const camX = window.innerWidth / 2 - (player.x + 22 + 8);
+  const camY = window.innerHeight / 2 - (player.y + 22 + 8);
   world.style.transform = `translate(${camX}px, ${camY}px)`;
 }
 
@@ -273,9 +340,9 @@ function updateZombies() {
   for (let i = zombies.length - 1; i >= 0; i--) {
     const z = zombies[i];
 
-    // Target player center
-    const dx = (player.x + 20) - (z.x + 20);
-    const dy = (player.y + 20) - (z.y + 20);
+    // Target player center (22 for player center, 20 for zombie center)
+    const dx = (player.x + 22) - (z.x + 20);
+    const dy = (player.y + 22) - (z.y + 20);
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist > 5) {
@@ -286,13 +353,14 @@ function updateZombies() {
     z.style.left = z.x + "px";
     z.style.top = z.y + "px";
 
-    // Damage player (reduced damage to 0.01 per frame)
-    if (dist < 30) player.hp -= 0.01;
+    // Damage player
+    if (dist < 32) player.hp -= 0.01;
 
     // HP bar update
     z.bar.style.width = (Math.max(0, z.hp) / 3 * 24) + "px";
 
     if (z.hp <= 0) {
+      showOw(z.x, z.y);
       z.remove();
       zombies.splice(i, 1);
       
@@ -312,10 +380,11 @@ function updateZombies() {
 /* SHOOTING SYSTEM */
 document.addEventListener("mousedown", (e) => {
   if (player.hp <= 0) return;
+  playGunshot();
   let hit = false;
 
-  const camX = window.innerWidth / 2 - (player.x + 20 + 8);
-  const camY = window.innerHeight / 2 - (player.y + 20 + 8);
+  const camX = window.innerWidth / 2 - (player.x + 22 + 8);
+  const camY = window.innerHeight / 2 - (player.y + 22 + 8);
   
   const mouseX = e.clientX - camX - 8;
   const mouseY = e.clientY - camY - 8;
