@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<html>
-<head>
+<!-- saved from url=(0067)file:///Users/rhoenstandard/Desktop/Homeschool/games/zombie-3d.html -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
   <title>Zombie Arena 3D</title>
   <style>
     body { margin: 0; overflow: hidden; background: #1a0d0a; font-family: Arial; }
@@ -91,37 +91,45 @@
 </head>
 <body>
 
-<div id="body-cam">
+<div id="body-cam" style="display: block;">
   <div id="rec-dot">● REC</div>
   <div style="position: absolute; bottom: 30px; right: 30px; color: white; font-family: monospace; font-size: 18px;">AXON BODY 3</div>
 </div>
 
 <div id="hud">
   ❤️ Health
-  <div id="hpbar"><div id="hp"></div></div>
+  <div id="hpbar"><div id="hp" style="width: 150px;"></div></div>
   <div id="stats">
-    💀 Kills: <span id="kills">0</span><br>
-    🏢 Floor: <span id="floor">1</span> / 10<br>
-    🏆 Best: <span id="highscore">0</span><br>
-    🔫 Ammo: <span id="ammo">0</span> / <span id="max-ammo">0</span><br>
+    💀 Kills: <span id="kills">103</span><br>
+    🏢 Floor: <span id="floor">10</span> / 10<br>
+    🏆 Best: <span id="highscore">45</span><br>
+    🔫 Ammo: <span id="ammo">29</span> / <span id="max-ammo">30</span><br>
     💣 Grenades: <span id="grenade-count">3</span><br>
     ✈️ Airstrikes: <span id="airstrike-count">0</span> (F)<br>
     ☢️ Nukes: <span id="nuke-count">0</span> (X)
   </div>
 </div>
 
-<div id="helper-hud"></div>
+<div id="helper-hud">
+    <div class="helper-status">
+      Ghost 
+      <div class="helper-hp-bg"><div class="helper-hp-fill" style="width: 100%; background: #00ff00"></div></div>
+    </div>
+  
+    <div class="helper-status">
+      Soap <span style="color:red">[DOWN]</span>
+      <div class="helper-hp-bg"><div class="helper-hp-fill" style="width: -160%; background: #555"></div></div>
+    </div>
+  </div>
 
-<div id="interaction-hint">PRESS [E] TO BREACH</div>
-
-<div id="boss-hud">
+<div id="boss-hud" style="display: none;">
   <h2 id="boss-name">THE UNDEAD COLOSSUS</h2>
-  <div id="boss-hp-bg"><div id="boss-hp-fill"></div></div>
+  <div id="boss-hp-bg"><div id="boss-hp-fill" style="width: 0%;"></div></div>
 </div>
 
-<div id="revive-hud">
+<div id="revive-hud" style="display: none;">
   <div>REVIVING...</div>
-  <div id="revive-bar-bg"><div id="revive-bar-fill"></div></div>
+  <div id="revive-bar-bg"><div id="revive-bar-fill" style="width: 100.028%;"></div></div>
 </div>
 
 <div id="player-revive-hud" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; display: none; text-align: center; z-index: 1000; text-shadow: 2px 2px black; background: rgba(0,0,0,0.5); padding: 20px; border-radius: 10px;">
@@ -131,12 +139,12 @@
   </div>
 </div>
 
-<div id="crosshair"></div>
-<div id="sniper-scope"></div>
+<div id="crosshair" style="display: block;"></div>
+<div id="sniper-scope" style="display: none;"></div>
 
-<div id="flash" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; opacity: 0; pointer-events: none; z-index: 5000; transition: opacity 0.1s;"></div>
+<div id="flash" style="position: fixed; top: 0px; left: 0px; width: 100%; height: 100%; background: white; opacity: 0; pointer-events: none; z-index: 5000; transition: opacity 0.1s ease 0s;"></div>
 
-<div id="instructions">
+<div id="instructions" style="display: block;">
   <h1>ZOMBIE ARENA 3D</h1>
   <p style="font-size: 14px; color: #ccc;">WASD: Move | Shift: Sprint | Space: Jump | C: Crouch | Q: Aim</p>
   
@@ -144,26 +152,26 @@
     <div>
       <p style="margin-bottom: 5px;">1. CHOOSE YOUR MODE:</p>
       <div style="display: flex; justify-content: center; gap: 10px;">
-        <button id="mode-battle" class="weapon-btn selected" onclick="setGameMode('battle')">BATTLE ⚔️</button>
-        <button id="mode-sandbox" class="weapon-btn" onclick="setGameMode('sandbox')">SANDBOX 🧊</button>
+        <button id="mode-battle" class="weapon-btn selected" onclick="setGameMode(&#39;battle&#39;)">BATTLE ⚔️</button>
+        <button id="mode-sandbox" class="weapon-btn" onclick="setGameMode(&#39;sandbox&#39;)">SANDBOX 🧊</button>
       </div>
     </div>
 
     <div>
       <p style="margin-bottom: 5px;">2. CHOOSE YOUR WEAPON:</p>
       <div class="weapon-selector" style="margin: 0;">
-        <button id="w-pistol" class="weapon-btn" onclick="selectWeapon('pistol')">Pistol 🔫</button>
-        <button id="w-ar" class="weapon-btn" onclick="selectWeapon('ar')">Assault Rifle 🔫</button>
-        <button id="w-sniper" class="weapon-btn" onclick="selectWeapon('sniper')">Sniper 🏹</button>
+        <button id="w-pistol" class="weapon-btn" onclick="selectWeapon(&#39;pistol&#39;)">Pistol 🔫</button>
+        <button id="w-ar" class="weapon-btn selected" onclick="selectWeapon(&#39;ar&#39;)">Assault Rifle 🔫</button>
+        <button id="w-sniper" class="weapon-btn" onclick="selectWeapon(&#39;sniper&#39;)">Sniper 🏹</button>
       </div>
     </div>
   </div>
   
-  <div id="weapon-info">Select a weapon to see stats...</div>
-  <button id="final-start-btn" style="display: none; background: #aa0000; color: white; border: none; padding: 15px 40px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 20px; margin-top: 10px; transition: 0.2s;" onclick="startGame()">START GAME</button>
+  <div id="weapon-info">Assault Rifle: Damage 1 | Ammo: 30</div>
+  <button id="final-start-btn" style="display: inline-block; background: rgb(170, 0, 0); color: white; border: none; padding: 15px 40px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 20px; margin-top: 10px; transition: all 0.2s ease 0s;" onclick="startGame()">START GAME</button>
 </div>
 
-<div id="victory-screen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 128, 0, 0.9); color: white; display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 4000; cursor: pointer;" onclick="location.reload()">
+<div id="victory-screen" style="position: fixed; top: 0px; left: 0px; width: 100%; height: 100%; background: rgba(0, 128, 0, 0.9); color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 4000; cursor: pointer;" onclick="location.reload()">
   <h1>VICTORY!</h1>
   <p>You cleared all 10 floors!</p>
   <p>Click anywhere to play again</p>
@@ -533,8 +541,6 @@ function clearWalls() {
   floors = [];
   barrels.forEach(b => scene.remove(b));
   barrels = [];
-  doors.forEach(d => scene.remove(d));
-  doors = [];
 }
 
 function generateFloorLayout(floor) {
@@ -546,27 +552,23 @@ function generateFloorLayout(floor) {
   if (floor === 1) {
     createWall(25, 0, 2, 15); createWall(-25, 0, 2, 15);
     createWall(0, 25, 15, 2); createWall(0, -25, 15, 2);
-    createDoor(0, 25, 0); // Front door to a zone
     createExplosiveBarrel(10, 10); createExplosiveBarrel(-10, -10);
     createExplosiveBarrel(20, -20); createExplosiveBarrel(-20, 20);
   } else if (floor === 2) {
     createWall(35, 35, 20, 2); createWall(-35, -35, 20, 2);
     createWall(35, -35, 2, 20); createWall(-35, 35, 2, 20);
-    createDoor(35, 35, 0); createDoor(-35, -35, 0);
     createExplosiveBarrel(0, 20); createExplosiveBarrel(0, -20);
     createExplosiveBarrel(30, 0); createExplosiveBarrel(-30, 0);
   } else if (floor === 3) {
     for(let i=0; i<4; i++) {
       const angle = (i * Math.PI / 2) + Math.PI/4;
       createWall(Math.cos(angle)*45, Math.sin(angle)*45, 15, 15);
-      createDoor(Math.cos(angle)*45 - 7.5, Math.sin(angle)*45, Math.PI/2);
       createExplosiveBarrel(Math.cos(angle)*30, Math.sin(angle)*30);
       createExplosiveBarrel(Math.cos(angle)*60, Math.sin(angle)*60);
     }
   } else if (floor === 4) {
     createWall(50, 0, 2, 60); createWall(-50, 0, 2, 60);
     createWall(0, 50, 60, 2); createWall(0, -50, 60, 2);
-    createDoor(50, 0, Math.PI/2); createDoor(-50, 0, Math.PI/2);
     createExplosiveBarrel(30, 30); createExplosiveBarrel(-30, -30);
     createExplosiveBarrel(30, -30); createExplosiveBarrel(-30, 30);
     createExplosiveBarrel(0, 40); createExplosiveBarrel(0, -40);
@@ -574,11 +576,8 @@ function generateFloorLayout(floor) {
     for(let i=0; i<8; i++) {
       const angle = (i * Math.PI / 4);
       createWall(Math.cos(angle)*30, Math.sin(angle)*30, 2, 20);
-      if (i % 2 === 0) {
-        createDoor(Math.cos(angle)*30, Math.sin(angle)*30, angle);
-        createExplosiveBarrel(Math.cos(angle)*45, Math.sin(angle)*45);
-        createExplosiveBarrel(Math.cos(angle)*20, Math.sin(angle)*20);
-      }
+      createExplosiveBarrel(Math.cos(angle)*45, Math.sin(angle)*45);
+      if (i % 2 === 0) createExplosiveBarrel(Math.cos(angle)*20, Math.sin(angle)*20);
     }
   } else if (floor === 6) {
     createWall(20, 20, 10, 10);
@@ -1082,74 +1081,6 @@ function createExplosiveBarrel(x, z) {
   barrels.push(group);
 }
 
-function createDoor(x, z, rotation = 0) {
-  const group = new THREE.Group();
-  const doorGeo = new THREE.BoxGeometry(3, 4, 0.4);
-  const doorMat = new THREE.MeshStandardMaterial({ color: 0x442211, roughness: 0.9 });
-  const door = new THREE.Mesh(doorGeo, doorMat);
-  door.position.set(1.5, 2, 0); // Pivot at the side
-  group.add(door);
-  
-  // Handle
-  const handleGeo = new THREE.SphereGeometry(0.1, 8, 8);
-  const handleMat = new THREE.MeshStandardMaterial({ color: 0xccaa00, metalness: 0.8 });
-  const handle = new THREE.Mesh(handleGeo, handleMat);
-  handle.position.set(2.6, 2, 0.3);
-  door.add(handle);
-
-  group.position.set(x, 0, z);
-  group.rotation.y = rotation;
-  group.isOpen = false;
-  group.mesh = door;
-  
-  // Door collision (reusing walls logic)
-  const colGeo = new THREE.BoxGeometry(3, 4, 0.4);
-  const colMesh = new THREE.Mesh(colGeo, new THREE.MeshBasicMaterial({ visible: false }));
-  colMesh.position.set(x + Math.cos(rotation)*1.5, 2, z - Math.sin(rotation)*1.5);
-  colMesh.rotation.y = rotation;
-  const collider = new THREE.Box3().setFromObject(colMesh);
-  group.collider = collider;
-  walls.push(collider);
-  
-  scene.add(group);
-  doors.push(group);
-}
-
-function interactDoor() {
-  let nearest = null;
-  let minDist = 4;
-  doors.forEach(d => {
-    if (d.isOpen) return;
-    const dist = camera.position.distanceTo(d.position);
-    if (dist < minDist) {
-      minDist = dist;
-      nearest = d;
-    }
-  });
-
-  if (nearest) {
-    nearest.isOpen = true;
-    speak("BREACHING!", 1.2, 1.1);
-    playPunchSound(); // Kicking sound
-    
-    // Animate door opening
-    let startRot = nearest.mesh.rotation.y;
-    let startTime = performance.now();
-    function animateDoor(time) {
-      let elapsed = time - startTime;
-      if (elapsed < 300) {
-        nearest.mesh.rotation.y = startRot + (Math.PI / 1.5) * (elapsed / 300);
-        requestAnimationFrame(animateDoor);
-      } else {
-        nearest.mesh.rotation.y = startRot + Math.PI / 1.5;
-        // Remove from walls so we can walk through
-        walls = walls.filter(w => w !== nearest.collider);
-      }
-    }
-    requestAnimationFrame(animateDoor);
-  }
-}
-
 function explodeBarrel(barrel) {
   createExplosion(barrel.position);
   playNukeExplosion(); // Reuse the loud sound for a big barrel blast
@@ -1473,7 +1404,6 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyG') throwGrenade();
   if (e.code === 'KeyF') useAirstrike();
   if (e.code === 'KeyX') useNuke();
-  if (e.code === 'KeyE') interactDoor();
   if (e.code === 'KeyN') playNukeExplosion(); // TEST KEY FOR LOUD SOUND
 });
 
@@ -1824,13 +1754,6 @@ function animate(time) {
       
       if (camera.position.y < groundedY) { camera.position.y = groundedY; playerVelocityY = 0; }
       if (playerVelocityY === 0) camera.position.y += (groundedY - camera.position.y) * 0.2 * dt;
-
-      // Interaction Hint Logic
-      let showHint = false;
-      doors.forEach(d => {
-        if (!d.isOpen && camera.position.distanceTo(d.position) < 4) showHint = true;
-      });
-      document.getElementById('interaction-hint').style.display = showHint ? 'block' : 'none';
     } else {
       // Player is downed - ensure HUD elements are clean
       document.getElementById('sniper-scope').style.display = 'none';
@@ -2062,5 +1985,5 @@ window.addEventListener('resize', () => {
 
 requestAnimationFrame(animate);
 </script>
-</body>
-</html>
+
+<canvas data-engine="three.js r160" width="2560" height="1366" style="display: block; width: 1280px; height: 683px;"></canvas></body></html>
