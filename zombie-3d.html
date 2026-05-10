@@ -143,10 +143,36 @@
   <div style="margin: 20px 0; display: flex; flex-direction: column; gap: 15px;">
     <div>
       <p style="margin-bottom: 5px;">1. CHOOSE YOUR MODE:</p>
-      <div style="display: flex; justify-content: center; gap: 10px;">
+      <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
         <button id="mode-battle" class="weapon-btn selected" onclick="setGameMode('battle')">BATTLE ⚔️</button>
         <button id="mode-sandbox" class="weapon-btn" onclick="setGameMode('sandbox')">SANDBOX 🧊</button>
+        <button id="mode-missions" class="weapon-btn" onclick="setGameMode('missions')">MISSIONS 🗺️</button>
+        <button id="mode-multiplayer" class="weapon-btn" onclick="setGameMode('multiplayer')">MULTIPLAYER 🌐</button>
       </div>
+    </div>
+
+    <div id="multiplayer-selection" style="display: none;">
+      <p style="margin-bottom: 5px;">MULTIPLAYER LOBBY:</p>
+      <div style="display: flex; flex-direction: column; gap: 10px; align-items: center;">
+        <button class="weapon-btn" style="width: 200px;" onclick="hostMultiplayer()">HOST GAME (GET CODE)</button>
+        <div style="display: flex; gap: 5px;">
+          <input id="room-code-input" type="text" placeholder="ENTER CODE" style="background: #333; color: white; border: 1px solid #555; padding: 10px; border-radius: 5px; text-align: center; width: 120px;">
+          <button class="weapon-btn" onclick="joinMultiplayer()">JOIN</button>
+        </div>
+        <p id="multi-status" style="font-size: 14px; color: #ffff00;"></p>
+      </div>
+    </div>
+
+    <div id="mission-selection" style="display: none;">
+      <p style="margin-bottom: 5px;">SELECT MISSION:</p>
+      <div style="display: flex; justify-content: center; gap: 5px; flex-wrap: wrap;">
+        <button id="m1" class="weapon-btn" onclick="selectMission(1)">1</button>
+        <button id="m2" class="weapon-btn" style="opacity: 0.5; cursor: not-allowed;" onclick="selectMission(2)">2</button>
+        <button id="m3" class="weapon-btn" style="opacity: 0.5; cursor: not-allowed;" onclick="selectMission(3)">3</button>
+        <button id="m4" class="weapon-btn" style="opacity: 0.5; cursor: not-allowed;" onclick="selectMission(4)">4</button>
+        <button id="m5" class="weapon-btn" style="opacity: 0.5; cursor: not-allowed;" onclick="selectMission(5)">5</button>
+      </div>
+      <p id="mission-desc" style="font-size: 12px; color: #aaa; margin-top: 5px;">Select a mission to begin...</p>
     </div>
 
     <div>
@@ -183,14 +209,87 @@
     }
   }
 </script>
-
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script type="module">
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
+let otherPlayers = {};
+let socket = null;
+let myRoomCode = null;
+
+window.hostMultiplayer = function() {
+  if (!socket) initSocket();
+  socket.emit('createRoom');
+  document.getElementById('multi-status').innerText = "REQUESTING CODE...";
+};
+
+window.joinMultiplayer = function() {
+  const code = document.getElementById('room-code-input').value.toUpperCase();
+  if (code.length !== 6) { speak("Invalid code length.", 1, 1); return; }
+  if (!socket) initSocket();
+  socket.emit('joinRoom', code);
+  document.getElementById('multi-status').innerText = "JOINING ROOM " + code + "...";
+};
+
+function initSocket() {
+  socket = io('http://localhost:3000'); // You will need to run the server.js I provide
+
+  socket.on('roomCreated', (code) => {
+    myRoomCode = code;
+    document.getElementById('multi-status').innerText = "ROOM CODE: " + code;
+    document.getElementById('final-start-btn').style.display = 'inline-block';
+    speak("Room created. Share the code " + code + " with your team.", 1, 1);
+  });
+
+  socket.on('joinedSuccess', (code) => {
+    myRoomCode = code;
+    document.getElementById('multi-status').innerText = "JOINED ROOM: " + code;
+    document.getElementById('final-start-btn').style.display = 'inline-block';
+    speak("Joined successfully. Get ready.", 1, 1);
+  });
+
+  socket.on('playerJoined', (id) => {
+    speak("New teammate connected.", 1, 1);
+    spawnOtherPlayer(id);
+  });
+
+  socket.on('playerMoved', (data) => {
+    if (otherPlayers[data.id]) {
+      const p = otherPlayers[data.id];
+      p.position.set(data.pos.x, data.pos.y, data.pos.z);
+      p.rotation.y = data.rot;
+      animateEntity(p, 1.0, data.isMoving); // 1.0 as dummy dt
+    } else {
+      spawnOtherPlayer(data.id);
+    }
+  });
+
+  socket.on('playerShot', (data) => {
+    playGunshot('ar'); // Visual/Audio cue for other player shooting
+  });
+
+  socket.on('playerDisconnected', (id) => {
+    if (otherPlayers[id]) {
+      scene.remove(otherPlayers[id]);
+      delete otherPlayers[id];
+    }
+  });
+}
+
+function spawnOtherPlayer(id) {
+  if (otherPlayers[id]) return;
+  const model = createBotModel();
+  model.isTeammate = true;
+  scene.add(model);
+  otherPlayers[id] = model;
+}
+
 /* GAME STATE */
 let health = 8;
+const BASE_ENTITY_SPEED = 0.07; // Faster Unified Speed
 let score = 0;
+let gameStarted = false; // Prevents respawning on weapon switch
 let currentFloor = 1;
 let bobTimer = 0;
 let highscore = localStorage.getItem("zombieHighScore") || 0;
@@ -232,14 +331,60 @@ let isAirstriking = false;
 let isChangingFloor = false;
 let isInserting = false;
 let heliGroup = null;
+let isDrivingHeli = false; // NEW
+let heliBase = null; // NEW
 let boss = null;
 let isSandboxMode = false;
+let isMissionMode = false;
+let currentMission = 0;
+let civilians = [];
+let rescueCircle = null;
+let rescueZones = [];
+let rescuedCount = 0;
+let totalCivilians = 0;
+let civiliansCollected = false; // NEW FLAG
+let unlockedMissions = parseInt(localStorage.getItem("zombieMissionsUnlocked")) || 1;
 let nukes = 0;
 let airstrikes = 0;
 let killsSinceLastNuke = 0;
 let killsSinceLastAirstrike = 0;
 const doomMusic = new Audio('https://ia803102.us.archive.org/28/items/doom-original-game-soundtrack/02%20-%20At%20Doom%27s%20Gate.mp3');
 doomMusic.loop = true;
+
+function animateEntity(entity, dt, isMoving, speedScale = 1.0) {
+  if (isMoving) {
+    entity.walkCycle += 0.3 * dt * speedScale; // Faster animation to match speed
+    const legSwing = Math.sin(entity.walkCycle) * 0.5;
+    const armSwing = Math.cos(entity.walkCycle) * 0.5;
+    
+    if (entity.legL) entity.legL.rotation.x = legSwing;
+    if (entity.legR) entity.legR.rotation.x = -legSwing;
+    
+    // For zombies, arms stay mostly forward but swing slightly
+    if (entity.armL) {
+      if (entity.isCivilian || entity.isBot || entity.isRunner) {
+        // Runners swing arms aggressively like humans
+        const swingAmt = entity.isRunner ? 1.0 : 0.5;
+        entity.armL.rotation.x = -armSwing * swingAmt;
+      } else {
+        // Regular zombies keep arms out
+        entity.armL.rotation.x = -Math.PI/2.2 + (armSwing * 0.2);
+      }
+    }
+    if (entity.armR) {
+      if (entity.isCivilian || entity.isBot || entity.isRunner) {
+        const swingAmt = entity.isRunner ? 1.0 : 0.5;
+        entity.armR.rotation.x = armSwing * swingAmt;
+      } else {
+        entity.armR.rotation.x = -Math.PI/2.2 - (armSwing * 0.2);
+      }
+    }
+  } else {
+    // Reset to idle
+    if (entity.legL) entity.legL.rotation.x = 0;
+    if (entity.legR) entity.legR.rotation.x = 0;
+  }
+}
 
 /* WEAPON SYSTEM */
 let currentAmmo = 30;
@@ -269,11 +414,69 @@ window.selectWeapon = function(type) {
 
 window.setGameMode = function(mode) {
   isSandboxMode = (mode === 'sandbox');
-  document.getElementById('mode-battle').classList.toggle('selected', !isSandboxMode);
-  document.getElementById('mode-sandbox').classList.toggle('selected', isSandboxMode);
+  isMissionMode = (mode === 'missions');
+  const isMultiMode = (mode === 'multiplayer');
+
+  document.getElementById('mode-battle').classList.toggle('selected', mode === 'battle');
+  document.getElementById('mode-sandbox').classList.toggle('selected', mode === 'sandbox');
+  document.getElementById('mode-missions').classList.toggle('selected', mode === 'missions');
+  document.getElementById('mode-multiplayer').classList.toggle('selected', mode === 'multiplayer');
+
+  document.getElementById('mission-selection').style.display = isMissionMode ? 'block' : 'none';
+  document.getElementById('multiplayer-selection').style.display = isMultiMode ? 'block' : 'none';
+
+  if (isMissionMode) {
+    // Update button states based on unlocked missions
+    for (let i = 1; i <= 5; i++) {
+      const btn = document.getElementById('m' + i);
+      if (i <= unlockedMissions) {
+        btn.style.opacity = "1";
+        btn.style.cursor = "pointer";
+      } else {
+        btn.style.opacity = "0.5";
+        btn.style.cursor = "not-allowed";
+      }
+    }
+  }
+
+  if (!isMissionMode) {    currentMission = 0;
+    document.getElementById('final-start-btn').style.display = 'none'; // Require weapon selection again if mode changed? Or just keep it.
+  } else {
+    document.getElementById('final-start-btn').style.display = (currentMission > 0) ? 'inline-block' : 'none';
+  }
 };
 
+window.selectMission = function(num) {
+  const descs = {
+    1: "MISSION 1: Building Rescue. Jump onto the roof, find the survivors inside, and stand in the circle to extract them.",
+    2: "MISSION 2: Clear the Hospital. Eliminate all zombies in the medical facility and save the hostages.",
+    3: "MISSION 3: Bridge Defense. Protect the survivors while they cross the bridge to the extraction zone.",
+    4: "MISSION 4: Underground Lab. Infiltrate the lab and retrieve the cure. (Locked)",
+    5: "MISSION 5: The Final Stand. Defend the helipad until extraction arrives. (Locked)"
+  };
+
+  if (num > unlockedMissions) { 
+    speak("Mission locked! Complete previous missions to unlock.", 1, 1); 
+    return; 
+  }
+
+  currentMission = num;
+  document.getElementById('mission-desc').innerText = descs[num];
+  document.querySelectorAll('#mission-selection .weapon-btn').forEach(btn => btn.classList.remove('selected'));
+  document.getElementById('m' + num).classList.add('selected');
+
+  if (currentWeapon) {
+    document.getElementById('final-start-btn').style.display = 'inline-block';
+  }
+};
 window.startGame = function() {
+  if (gameStarted) {
+    controls.lock();
+    return;
+  }
+  gameStarted = true;
+  document.getElementById('final-start-btn').innerText = "RESUME GAME";
+
   if (isSandboxMode) {
     document.getElementById("floor").innerText = "∞";
     speak("Sandbox Mode. Infinite arena with buildings.", 1, 1.2);
@@ -287,17 +490,39 @@ window.startGame = function() {
     createBuilding(-30, -30);
     createBuilding(30, -30);
     createBuilding(-30, 30);
+    
+    // Helpers removed from Sandbox to reduce chaos
+  } else if (isMissionMode) {
+    if (currentMission === 1) {
+      setupMission1();
+    } else if (currentMission === 2) {
+      setupMission2();
+    } else if (currentMission === 3) {
+      setupMission3();
+    }
   } else {
     generateFloorLayout(1); // Ensure floor 1 layout is set
+    // Restore Helpers for Battle Mode
+    spawnBot(5, 5); spawnBot(-5, -5);
   }
   
   // Helicopter Insertion
   isInserting = true;
   heliGroup = createHelicopter();
-  heliGroup.position.set(0, 40, 50);
-  scene.add(heliGroup);
+  heliGroup.rotation.y = Math.PI; // Flipped around
   
-  camera.position.set(0, 40, 52); // Inside the transport bay
+  if (isMissionMode && currentMission === 1) {
+    heliGroup.position.set(0, 40, 30); // Positioned to jump onto building at (0,0)
+    camera.position.set(0, 40, 28); // Adjusted camera to stay inside the flipped heli
+  } else if (isMissionMode && currentMission === 2) {
+    heliGroup.position.set(0, 40, -100); // Positioned at the start of the hallway
+    camera.position.set(0, 40, -102); 
+  } else {
+    heliGroup.position.set(0, 40, 50);
+    camera.position.set(0, 40, 48); // Adjusted camera
+  }
+  
+  scene.add(heliGroup);
   
   document.getElementById('body-cam').style.display = 'block';
   controls.lock();
@@ -307,20 +532,326 @@ window.startGame = function() {
   }, 1000);
 };
 
+function setupMission1() {
+  clearWalls();
+  document.getElementById("floor").innerText = "M1";
+  speak("Mission 1: Rescue survivors inside. Head to the second floor!", 1, 1);
+  
+  // Outer Bounds
+  createWall(100, 0, 10, 200); createWall(-100, 0, 10, 200);
+  createWall(0, 100, 200, 10); createWall(0, -100, 200, 10);
+  
+  // The Target Building at 0,0
+  createBuilding(0, 0);
+  
+  // Add a Helipad on the side (y=12, next to the roof)
+  createFloor(15, 0, 15, 15, 12); // Helipad platform
+  createWall(15, 7.5, 15, 0.5, 1, 12); // Guard rail
+  createWall(15, -7.5, 15, 0.5, 1, 12); // Guard rail
+  createWall(22.5, 0, 0.5, 15, 1, 12); // Guard rail
+  
+  // Add an "H" on the helipad
+  const hGeo = new THREE.BoxGeometry(1, 0.1, 8);
+  const hMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const h1 = new THREE.Mesh(hGeo, hMat); h1.position.set(12, 12.1, 0); scene.add(h1);
+  const h2 = new THREE.Mesh(hGeo, hMat); h2.position.set(18, 12.1, 0); scene.add(h2);
+  const h3 = new THREE.Mesh(new THREE.BoxGeometry(6, 0.1, 1), hMat); h3.position.set(15, 12.1, 0); scene.add(h3);
+  
+  // Add a rescue zone inside the building on the second floor (y=6).
+  createRescueCircle(0, 6, 0); 
+  
+  // Spawn civilians (Hostages) in the zone
+  for(let i=0; i<3; i++) {
+    spawnCivilian((Math.random()-0.5)*3, 6, (Math.random()-0.5)*3);
+  }
+  totalCivilians = 3;
+  rescuedCount = 0;
+  
+  // No zombies in missions as requested
+}
+
+function setupMission2() {
+  clearWalls();
+  rescueZones = [];
+  document.getElementById("floor").innerText = "M2";
+  speak("Mission 2: Breach the rooms and save the hostages. Use E to open doors.", 1, 1);
+  
+  // Outer Bounds
+  createWall(100, 0, 10, 200); createWall(-100, 0, 10, 200);
+  createWall(0, 100, 200, 10); createWall(0, -100, 200, 10);
+  
+  // Hospital Entrance Hallway
+  createWall(10, -50, 1, 100); createWall(-10, -50, 1, 100);
+  
+  // Rooms and Objectives
+  const roomCount = 4;
+  for (let i = 0; i < roomCount; i++) {
+    const z = -80 + (i * 25);
+    const side = (i % 2 === 0) ? 1 : -1;
+    const xPos = side * 30;
+
+    // Room Walls
+    createWall(xPos, z, 20, 1, 4); // Back
+    createWall(xPos, z + 20, 20, 1, 4); // Front
+    createWall(side * 40, z + 10, 1, 20, 4); // Side
+    
+    // TWO DOORS per room with precise wall segments
+    createWall(side * 20, z + 2, 1, 4, 4);  // Segment 1 (z to z+4)
+    createWall(side * 20, z + 10, 1, 6, 4); // Segment 2 (z+7 to z+13)
+    createWall(side * 20, z + 18, 1, 4, 4); // Segment 3 (z+16 to z+20)
+    
+    // THE BREACH DOORS
+    createDoor(side * 20, z + 4, -Math.PI / 2);  // Door 1 in first gap
+    createDoor(side * 20, z + 13, -Math.PI / 2); // Door 2 in second gap
+    
+    // Objectives in Room
+    createHospitalBed(xPos, z + 10);
+    spawnCivilian(xPos + (side * 2), 0, z + 12);
+    createRescueCircle(xPos, 0, z + 10, true); // Multiple zone
+    
+    // Guarding Zombies
+    spawnZombieAt(xPos - 5, z + 5);
+    spawnZombieAt(xPos + 5, z + 15);
+  }
+
+  // Helipad for later extraction
+  createFloor(0, 95, 30, 30, 0.5);
+  const hMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const h1 = new THREE.Mesh(new THREE.BoxGeometry(2, 0.2, 16), hMat); h1.position.set(-6, 0.6, 95); scene.add(h1);
+  const h2 = new THREE.Mesh(new THREE.BoxGeometry(2, 0.2, 16), hMat); h2.position.set(6, 0.6, 95); scene.add(h2);
+  const h3 = new THREE.Mesh(new THREE.BoxGeometry(10, 0.2, 2), hMat); h3.position.set(0, 0.6, 95); scene.add(h3);
+
+  totalCivilians = roomCount;
+  rescuedCount = 0;
+}
+
+function createHospitalBed(x, z) {
+  const group = new THREE.Group();
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8 });
+  
+  // Mattress
+  const mattress = new THREE.Mesh(new THREE.BoxGeometry(3, 0.5, 6), whiteMat);
+  mattress.position.y = 1;
+  group.add(mattress);
+  
+  // Frame
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.2, 6.2), metalMat);
+  frame.position.y = 0.8;
+  group.add(frame);
+  
+  // Legs
+  for(let i=0; i<4; i++) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.8), metalMat);
+    leg.position.set(i<2 ? 1.4 : -1.4, 0.4, (i%2===0) ? 2.8 : -2.8);
+    group.add(leg);
+  }
+  
+  group.position.set(x, 0, z);
+  scene.add(group);
+  wallMeshes.push(mattress); // Add to collision
+  const collider = new THREE.Box3().setFromObject(mattress);
+  walls.push(collider);
+}
+
+function createRescueCircle(x, y, z, isMultiple = false) {
+  const group = new THREE.Group();
+  
+  // Glowing floor plate
+  const plateGeo = new THREE.CylinderGeometry(5, 5, 0.2, 32);
+  const plateMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.6 });
+  const plate = new THREE.Mesh(plateGeo, plateMat);
+  plate.position.y = 0.1;
+  group.add(plate);
+  
+  // Tall Beacon Beam
+  const beamGeo = new THREE.CylinderGeometry(4, 4, 30, 32, 1, true);
+  const beamMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.1, side: THREE.DoubleSide });
+  const beam = new THREE.Mesh(beamGeo, beamMat);
+  beam.position.y = 15;
+  group.add(beam);
+  
+  const light = new THREE.PointLight(0x00ff00, 10, 15);
+  light.position.y = 2;
+  group.add(light);
+  
+  group.position.set(x, y, z);
+  scene.add(group);
+  if (isMultiple) rescueZones.push(group);
+  else rescueCircle = group;
+}
+
+function setupMission3() {
+  clearWalls();
+  document.getElementById("floor").innerText = "M3";
+  speak("Mission 3: Bridge Defense. Protect the survivors and get them to the other side!", 1, 1);
+  
+  // The Bridge
+  const bridgeWidth = 12;
+  const bridgeLength = 200;
+  const bridgeHeight = 20;
+  createFloor(0, 0, bridgeWidth, bridgeLength, bridgeHeight);
+  
+  // Bridge Rails
+  createWall(bridgeWidth/2, 0, 0.5, bridgeLength, 1.5, bridgeHeight);
+  createWall(-bridgeWidth/2, 0, 0.5, bridgeLength, 1.5, bridgeHeight);
+  
+  // Bridge Support Pillars (Visual)
+  for(let i=-2; i<=2; i++) {
+    const pZ = i * 40;
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(4, bridgeHeight, 4), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+    pillar.position.set(0, bridgeHeight/2, pZ);
+    scene.add(pillar);
+    wallMeshes.push(pillar);
+  }
+
+  // Goal: Rescue Zone at the end of the bridge
+  createRescueCircle(0, bridgeHeight, 90);
+  
+  // Spawn Survivors at the start
+  totalCivilians = 4;
+  rescuedCount = 0;
+  for(let i=0; i<totalCivilians; i++) {
+    const x = (Math.random()-0.5) * 6;
+    const z = -90 + (Math.random() * 5);
+    spawnCivilian(x, bridgeHeight, z);
+  }
+
+  // Periodic Zombie Spawns - Primarily BEHIND the survivors
+  const spawnTimer = setInterval(() => {
+    if (currentMission !== 3 || isGameOver) { clearInterval(spawnTimer); return; }
+    
+    // Calculate a Z position behind the survivors (who start at -90 and move forward)
+    let averageZ = 0;
+    if (civilians.length > 0) {
+      civilians.forEach(c => averageZ += c.position.z);
+      averageZ /= civilians.length;
+    } else {
+      averageZ = -90; // Fallback
+    }
+
+    // Spawn 3 zombies behind the group to keep the chase intense
+    for(let i=0; i<3; i++) {
+      const spawnZ = averageZ - 15 - (Math.random() * 25);
+      spawnZombieAt((Math.random()-0.5)*8, bridgeHeight, spawnZ);
+    }
+    
+    // Roadblocks removed as requested - all zombies now spawn behind
+  }, 3500);
+
+  // Set Helicopter for extraction
+  heliGroup = createHelicopter();
+  heliGroup.position.set(0, bridgeHeight + 2.2, 95);
+  heliGroup.rotation.y = Math.PI;
+  scene.add(heliGroup);
+  
+  // Boarding Circle for Heli
+  const boardCircle = new THREE.Group();
+  const cGeo = new THREE.RingGeometry(4, 5, 32);
+  const cMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+  const circle = new THREE.Mesh(cGeo, cMat);
+  circle.rotation.x = -Math.PI / 2;
+  circle.position.y = 0.1;
+  boardCircle.add(circle);
+  boardCircle.position.set(0, bridgeHeight, 95);
+  scene.add(boardCircle);
+  rescueZones.push(boardCircle); // Reuse rescue zones for detection
+
+  // Create Military Base (Final Landing Zone)
+  const baseGroup = new THREE.Group();
+  const basePlat = new THREE.Mesh(new THREE.BoxGeometry(40, 2, 40), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+  baseGroup.add(basePlat);
+  
+  // Base markings
+  const m1 = new THREE.Mesh(new THREE.BoxGeometry(2, 0.2, 16), new THREE.MeshBasicMaterial({ color: 0xffff00 })); m1.position.set(-8, 1.1, 0); baseGroup.add(m1);
+  const m2 = new THREE.Mesh(new THREE.BoxGeometry(2, 0.2, 16), new THREE.MeshBasicMaterial({ color: 0xffff00 })); m2.position.set(8, 1.1, 0); baseGroup.add(m2);
+  const m3 = new THREE.Mesh(new THREE.BoxGeometry(14, 0.2, 2), new THREE.MeshBasicMaterial({ color: 0xffff00 })); m3.position.set(0, 1.1, 0); baseGroup.add(m3);
+  
+  // Guard Tower
+  const tower = new THREE.Group();
+  const tPost = new THREE.Mesh(new THREE.BoxGeometry(2, 15, 2), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+  tPost.position.y = 7.5;
+  const tTop = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 6), new THREE.MeshStandardMaterial({ color: 0x444444 }));
+  tTop.position.y = 15;
+  tower.add(tPost, tTop);
+  tower.position.set(-15, 0, -15);
+  baseGroup.add(tower);
+
+  // Fences
+  for(let i=0; i<4; i++) {
+    const fence = new THREE.Mesh(new THREE.BoxGeometry(40, 5, 0.5), new THREE.MeshStandardMaterial({ color: 0x555555, transparent: true, opacity: 0.5 }));
+    if(i===0) fence.position.set(0, 2.5, 20);
+    if(i===1) fence.position.set(0, 2.5, -20);
+    if(i===2) { fence.position.set(20, 2.5, 0); fence.rotation.y = Math.PI/2; }
+    if(i===3) { fence.position.set(-20, 2.5, 0); fence.rotation.y = Math.PI/2; }
+    baseGroup.add(fence);
+  }
+
+  // Crates
+  for(let i=0; i<5; i++) {
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshStandardMaterial({ color: 0x554433 }));
+    crate.position.set(12 + Math.random()*5, 2, 12 + Math.random()*5);
+    baseGroup.add(crate);
+  }
+  
+  // Rescue Beacon for Base
+  const beamGeo = new THREE.CylinderGeometry(10, 10, 2000, 32, 1, true);
+  const beamMat = new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.2, side: THREE.DoubleSide });
+  const beam = new THREE.Mesh(beamGeo, beamMat);
+  beam.position.y = 1000;
+  baseGroup.add(beam);
+
+  baseGroup.position.set(0, 5, 400); // Far away
+  scene.add(baseGroup);
+  heliBase = baseGroup;
+}
+
+function spawnCivilian(x, y, z) {
+  const model = createBotModel(true); // true = Civilian (Blue shirt, NO GUN)
+  model.position.set(x, y, z);
+  model.isCivilian = true;
+  scene.add(model);
+  civilians.push(model);
+}
+
+function spawnZombieAt(x, y, z) {
+  const isRunner = Math.random() < 0.3;
+  const zom = createZombieModel(false);
+  
+  if (isRunner) {
+    zom.traverse(n => {
+      if (n.isMesh && n.material.color.getHex() === 0x3a4a5a) {
+        n.material = new THREE.MeshStandardMaterial({ color: 0x440000 });
+      }
+    });
+    zom.isRunner = true;
+  }
+
+  zom.position.set(x, y, z);
+  zom.hp = 3;
+  zom.lastHit = 0;
+  const hitboxGeo = new THREE.BoxGeometry(1.8, 2.5, 1.8);
+  const hitbox = new THREE.Mesh(hitboxGeo, new THREE.MeshBasicMaterial({ visible: false }));
+  hitbox.position.y = 1;
+  zom.add(hitbox);
+  zom.hitbox = hitbox;
+  scene.add(zom);
+  zombies.push(zom);
+}
+
 /* THREE.JS SETUP */
-const helperNames = ["Ghost", "Soap", "Price", "Gaz", "Roach"];
+const helperNames = ["Soap", "Roach"];
 let helperCounter = 0;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb); // Sky Blue
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.2, 1000);
 camera.position.set(0, 1.6, 0);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setPixelRatio(1); // Lock to 1 for much better performance
+renderer.shadowMap.enabled = false; // Shadows disabled
 document.body.appendChild(renderer.domElement);
 
 const controls = new PointerLockControls(camera, document.body);
@@ -335,18 +866,7 @@ scene.add(ambientLight);
 
 const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
 sunLight.position.set(50, 100, 50);
-sunLight.castShadow = true;
-
-// Shadow settings for "nice" quality
-sunLight.shadow.mapSize.width = 2048;
-sunLight.shadow.mapSize.height = 2048;
-sunLight.shadow.camera.near = 0.5;
-sunLight.shadow.camera.far = 500;
-sunLight.shadow.camera.left = -150;
-sunLight.shadow.camera.right = 150;
-sunLight.shadow.camera.top = 150;
-sunLight.shadow.camera.bottom = -150;
-sunLight.shadow.bias = -0.0005;
+sunLight.castShadow = false; // Shadows disabled
 
 scene.add(sunLight);
 
@@ -359,6 +879,7 @@ scene.add(camera);
 
 /* DAY/NIGHT CYCLE */
 let cycleTimer = 0;
+let isDay = true;
 const DAY_TIME = 30000; // 30s
 const NIGHT_TIME = 60000; // 60s
 const TOTAL_CYCLE = DAY_TIME + NIGHT_TIME;
@@ -366,21 +887,23 @@ const nightFog = new THREE.FogExp2(0x1a0d0a, 0.015);
 
 function updateDayNightCycle() {
   cycleTimer = (performance.now() % TOTAL_CYCLE);
+  const nowDay = cycleTimer < DAY_TIME;
   
-  if (cycleTimer < DAY_TIME) {
-    // Daytime
-    scene.background.setHex(0x87ceeb);
-    ambientLight.intensity = 1.0;
-    sunLight.intensity = 1.5;
-    flashLight.intensity = 100;
-    scene.fog = null;
-  } else {
-    // Nighttime
-    scene.background.setHex(0x1a0d0a);
-    ambientLight.intensity = 0.4;
-    sunLight.intensity = 0.2;
-    flashLight.intensity = 2000;
-    scene.fog = nightFog;
+  if (nowDay !== isDay) {
+    isDay = nowDay;
+    if (isDay) {
+      scene.background.setHex(0x87ceeb);
+      ambientLight.intensity = 1.0;
+      sunLight.intensity = 1.5;
+      flashLight.intensity = 100;
+      scene.fog = null;
+    } else {
+      scene.background.setHex(0x1a0d0a);
+      ambientLight.intensity = 0.4;
+      sunLight.intensity = 0.2;
+      flashLight.intensity = 2000;
+      scene.fog = nightFog;
+    }
   }
 }
 
@@ -402,6 +925,7 @@ const grenadeTexture = createEmojiTexture('💣');
 /* 3D MODELS */
 function createZombieModel(isBoss = false) {
   const group = new THREE.Group();
+  group.walkCycle = 0;
   
   const skinMat = new THREE.MeshStandardMaterial({ color: isBoss ? 0x990000 : 0x5a7a5a }); 
   const shirtMat = new THREE.MeshStandardMaterial({ color: isBoss ? 0x330000 : 0x3a4a5a });
@@ -427,24 +951,29 @@ function createZombieModel(isBoss = false) {
   
   // Arms
   const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), skinMat);
-  armL.position.set(-0.4, 1.3, -0.1);
+  armL.position.set(-0.4, 1.3, 0);
+  armL.geometry.translate(0, -0.3, 0); // Pivot at shoulder
   armL.rotation.x = -Math.PI / 2.2;
   const armR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), skinMat);
-  armR.position.set(0.4, 1.3, -0.1);
+  armR.position.set(0.4, 1.3, 0);
+  armR.geometry.translate(0, -0.3, 0); // Pivot at shoulder
   armR.rotation.x = -Math.PI / 2.2;
   group.add(armL, armR);
+  group.armL = armL; group.armR = armR;
   
   // Legs
   const legL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.7, 0.25), pantsMat);
-  legL.position.set(-0.15, 0.35, 0);
+  legL.position.set(-0.15, 0.7, 0);
+  legL.geometry.translate(0, -0.35, 0); // Pivot at hip
   const legR = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.7, 0.25), pantsMat);
-  legR.position.set(0.15, 0.35, 0);
+  legR.position.set(0.15, 0.7, 0);
+  legR.geometry.translate(0, -0.35, 0); // Pivot at hip
   group.add(legL, legR);
+  group.legL = legL; group.legR = legR;
 
   if (isBoss) group.scale.set(6, 6, 6);
   else group.scale.set(1.2, 1.2, 1.2);
 
-  group.traverse(n => { if(n.isMesh) { n.castShadow = true; n.receiveShadow = true; } });
   return group;
 }
 
@@ -466,7 +995,7 @@ const groundGeo = new THREE.PlaneGeometry(2000, 2000);
 const groundMat = new THREE.MeshStandardMaterial({ color: 0x3e8e41, roughness: 0.8 });
 const ground = new THREE.Mesh(groundGeo, groundMat);
 ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
+ground// Shadow removed
 scene.add(ground);
 
 const grid = new THREE.GridHelper(2000, 100, 0x555555, 0x888888);
@@ -480,8 +1009,8 @@ function createWall(x, z, w, d, h = 4, y = 0) {
   const mat = new THREE.MeshStandardMaterial({ map: tex });
   const wall = new THREE.Mesh(geo, mat);
   wall.position.set(x, y + h/2, z);
-  wall.castShadow = true;
-  wall.receiveShadow = true;
+  // Shadow property removed
+  // Shadow property removed
   scene.add(wall);
   const collider = new THREE.Box3().setFromObject(wall);
   walls.push(collider);
@@ -493,8 +1022,8 @@ function createFloor(x, z, w, d, y) {
   const mat = new THREE.MeshStandardMaterial({ color: 0x444444 });
   const floor = new THREE.Mesh(geo, mat);
   floor.position.set(x, y - 0.25, z);
-  floor.castShadow = true;
-  floor.receiveShadow = true;
+  floor// Shadow removed
+  floor// Shadow removed
   scene.add(floor);
   const collider = new THREE.Box3().setFromObject(floor);
   floors.push(collider);
@@ -505,7 +1034,14 @@ function createBuilding(bx, bz) {
   const size = 15;
   const h = 6;
   createFloor(bx, bz, size, size, h); // 2nd Floor
-  createFloor(bx, bz, size, size, h * 2); // Roof
+  
+  // Roof with a Hatch (4 segments)
+  const q = size / 4;
+  createFloor(bx - q, bz - q, size/2, size/2, h * 2);
+  createFloor(bx + q, bz - q, size/2, size/2, h * 2);
+  createFloor(bx - q, bz + q, size/2, size/2, h * 2);
+  // createFloor(bx + q, bz + q, size/2, size/2, h * 2); // HOLE HERE
+  
   for (let f = 0; f < 2; f++) {
     const yOff = f * h;
     createWall(bx, bz - size/2, size, 0.5, h, yOff);
@@ -535,6 +1071,10 @@ function clearWalls() {
   barrels = [];
   doors.forEach(d => scene.remove(d));
   doors = [];
+  civiliansCollected = false; // Reset on clear
+  if (rescueCircle) { scene.remove(rescueCircle); rescueCircle = null; }
+  civilians.forEach(c => scene.remove(c));
+  civilians = [];
 }
 
 function generateFloorLayout(floor) {
@@ -650,7 +1190,7 @@ window.updatePistolModel = function() {
     const hammer = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.04), steelMat);
     hammer.position.set(0, 0.04, 0.05);
     
-    [slide, barrel, grip, guard, frontSight, laserBox, laserLens, hammer].forEach(m => { m.castShadow = true; m.receiveShadow = true; });
+    [slide, barrel, grip, guard, frontSight, laserBox, laserLens, hammer]// Removed shadows for performance
     pistolGroup.add(slide, barrel, grip, guard, frontSight, laserBox, laserLens, hammer);
 
   } else if (currentWeapon.model === 'sniper') {
@@ -692,7 +1232,7 @@ window.updatePistolModel = function() {
     const handle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.4, 0.1), blackMat);
     handle.position.set(0, -0.25, -0.1);
     
-    [barrel, muzzle, receiver, scopeTube, scopeBack, scopeFront, rimFront, rimBack, bipodLegL, bipodLegR, stock, bolt, handle].forEach(m => { m.castShadow = true; m.receiveShadow = true; });
+    [barrel, muzzle, receiver, scopeTube, scopeBack, scopeFront, rimFront, rimBack, bipodLegL, bipodLegR, stock, bolt, handle]// Removed shadows for performance
     pistolGroup.add(barrel, muzzle, receiver, scopeTube, scopeBack, scopeFront, rimFront, rimBack, bipodLegL, bipodLegR, stock, bolt, handle);
 
   } else if (currentWeapon.model === 'ar') {
@@ -731,7 +1271,7 @@ window.updatePistolModel = function() {
     const grip = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.25, 0.09), blackMat);
     grip.position.set(0, -0.2, 0.1); grip.rotation.x = -0.15;
     
-    [receiver, barrel, gasBlock, muzzle, handguard, stock, mag, opticBase, opticTube, opticRimFront, opticRimBack, grip].forEach(m => { m.castShadow = true; m.receiveShadow = true; });
+    [receiver, barrel, gasBlock, muzzle, handguard, stock, mag, opticBase, opticTube, opticRimFront, opticRimBack, grip]// Removed shadows for performance
     pistolGroup.add(receiver, barrel, gasBlock, muzzle, handguard, stock, mag, opticBase, opticTube, opticRimFront, opticRimBack, grip);
   }
 }
@@ -896,11 +1436,97 @@ function playJetSound() {
   source.start();
 }
 
-function speak(text, pitch = 1, rate = 1) {
+function playRadioEffect() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const duration = 0.2;
+  const noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * duration, audioCtx.sampleRate);
+  const output = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < audioCtx.sampleRate * duration; i++) output[i] = (Math.random() * 2 - 1) * 0.1;
+  const source = audioCtx.createBufferSource();
+  source.buffer = noiseBuffer;
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+  source.connect(gain); gain.connect(audioCtx.destination);
+  source.start();
+
+  // Radio Beep
+  const osc = audioCtx.createOscillator();
+  const beepGain = audioCtx.createGain();
+  osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+  beepGain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+  beepGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+  osc.connect(beepGain); beepGain.connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+}
+
+function playZombieGroan() {
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const duration = 0.6 + Math.random() * 0.4;
+  const pitchShift = 0.8 + Math.random() * 0.4;
+  
+  // Base groan oscillator
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
+  
+  osc.type = 'sawtooth';
+  // Start low and drop even lower
+  osc.frequency.setValueAtTime(120 * pitchShift, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(40 * pitchShift, audioCtx.currentTime + duration);
+  
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(600, audioCtx.currentTime);
+  filter.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + duration);
+  
+  gain.gain.setValueAtTime(0.6, audioCtx.currentTime); // Increased volume
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+  
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+
+  // Add some breathy noise for realism
+  const noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * duration, audioCtx.sampleRate);
+  const data = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < audioCtx.sampleRate * duration; i++) data[i] = Math.random() * 2 - 1;
+  
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = noiseBuffer;
+  const nFilter = audioCtx.createBiquadFilter();
+  nFilter.type = 'bandpass';
+  nFilter.frequency.setValueAtTime(200 * pitchShift, audioCtx.currentTime);
+  const nGain = audioCtx.createGain();
+  nGain.gain.setValueAtTime(0.3, audioCtx.currentTime); // Increased volume
+  nGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+  
+  noise.connect(nFilter);
+  nFilter.connect(nGain);
+  nGain.connect(audioCtx.destination);
+  noise.start();
+}
+
+function speak(text, source = 'command', pitch = 1, rate = 1) {
   const utt = new SpeechSynthesisUtterance(text);
   const voices = window.speechSynthesis.getVoices();
-  const male = voices.find(v => v.name.includes("Male") || v.name.includes("David") || v.name.includes("Alex"));
-  if (male) utt.voice = male; utt.pitch = pitch; utt.rate = rate;
+  
+  // Single Consistent Male Voice
+  let voice = voices.find(v => v.name.includes("Alex")) || 
+              voices.find(v => v.name.includes("Daniel")) || 
+              voices.find(v => v.name.includes("Google US English")) || 
+              voices[0];
+
+  utt.voice = voice;
+  utt.pitch = 0.8 * pitch; // Consistent deep male tone
+  utt.rate = 1.0 * rate;
+
+  if (source === 'command' || source === 'pilot') {
+    playRadioEffect();
+  }
+
   window.speechSynthesis.speak(utt);
 }
 
@@ -1019,15 +1645,31 @@ function createMuzzleFlash(pos) {
 }
 
 function createBloodSplatter(pos) {
-  for (let i = 0; i < 15; i++) {
-    const geo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xaa0000, transparent: true, opacity: 1 });
+  // 1. Blood Mist (Distant/Spray)
+  for (let i = 0; i < 40; i++) {
+    const geo = new THREE.BoxGeometry(0.06, 0.06, 0.06);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x880000, transparent: true, opacity: 1 });
     const p = new THREE.Mesh(geo, mat);
     p.position.copy(pos);
-    p.velocity = new THREE.Vector3((Math.random()-0.5)*0.3, Math.random()*0.4, (Math.random()-0.5)*0.3);
-    p.life = 1.0;
+    p.velocity = new THREE.Vector3((Math.random()-0.5)*0.6, Math.random()*0.6, (Math.random()-0.5)*0.6);
+    p.life = 0.8 + Math.random() * 0.4;
     scene.add(p);
     bloodParticles.push(p);
+  }
+  
+  // 2. Chunky Guts & Organs
+  for (let i = 0; i < 12; i++) {
+    const size = 0.1 + Math.random() * 0.25;
+    const geo = new THREE.BoxGeometry(size, size, size);
+    const mat = new THREE.MeshStandardMaterial({ color: i % 2 === 0 ? 0x660000 : 0xaa0000 });
+    const chunk = new THREE.Mesh(geo, mat);
+    chunk.position.copy(pos);
+    chunk.velocity = new THREE.Vector3((Math.random()-0.5)*0.5, 0.4 + Math.random()*0.4, (Math.random()-0.5)*0.5);
+    chunk.angularVel = new THREE.Vector3(Math.random(), Math.random(), Math.random()).multiplyScalar(0.2);
+    chunk.life = 5.0; // Lasts 5 seconds on floor
+    chunk.isChunk = true;
+    scene.add(chunk);
+    bloodParticles.push(chunk);
   }
 }
 
@@ -1046,10 +1688,49 @@ function createExplosion(pos) {
 }
 
 function spawnMedkit(pos) {
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: medkitTexture }));
-  sprite.position.copy(pos); sprite.position.y = 0.5;
-  sprite.scale.set(1, 1, 1);
-  scene.add(sprite); medkits.push(sprite);
+  const group = new THREE.Group();
+  
+  // White Box Body
+  const boxGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  const box = new THREE.Mesh(boxGeo, whiteMat);
+  box.position.y = 0.5;
+  group.add(box);
+
+  // Red Cross
+  const redMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+  const crossSize = 0.5;
+  const crossThick = 0.15;
+  const crossDepth = 0.82; // Slightly wider than box to show on both sides
+
+  // Horizontal bar
+  const horiz = new THREE.Mesh(new THREE.BoxGeometry(crossSize, crossThick, crossDepth), redMat);
+  horiz.position.y = 0.5;
+  group.add(horiz);
+
+  // Vertical bar
+  const vert = new THREE.Mesh(new THREE.BoxGeometry(crossThick, crossSize, crossDepth), redMat);
+  vert.position.y = 0.5;
+  group.add(vert);
+
+  // Crosses on the other two sides (X/Z flip)
+  const horiz2 = new THREE.Mesh(new THREE.BoxGeometry(crossDepth, crossThick, crossSize), redMat);
+  horiz2.position.y = 0.5;
+  group.add(horiz2);
+
+  const vert2 = new THREE.Mesh(new THREE.BoxGeometry(crossDepth, crossSize, crossThick), redMat);
+  vert2.position.y = 0.5;
+  group.add(vert2);
+  
+  // Green glow light
+  const light = new THREE.PointLight(0x00ff00, 5, 5);
+  light.position.y = 0.5;
+  group.add(light);
+  
+  group.position.copy(pos);
+  group.position.y = 0.5;
+  scene.add(group);
+  medkits.push(group);
 }
 
 function createExplosiveBarrel(x, z) {
@@ -1058,8 +1739,8 @@ function createExplosiveBarrel(x, z) {
   const barrelMat = new THREE.MeshStandardMaterial({ color: 0xaa0000, metalness: 0.3, roughness: 0.7 });
   const barrel = new THREE.Mesh(barrelGeo, barrelMat);
   barrel.position.y = 0.6;
-  barrel.castShadow = true;
-  barrel.receiveShadow = true;
+  barrel// Shadow removed
+  barrel// Shadow removed
   group.add(barrel);
 
   // Yellow "Explosive" stripe
@@ -1116,6 +1797,7 @@ function createDoor(x, z, rotation = 0) {
 }
 
 function interactDoor() {
+  if (isDrivingHeli) return; // Prevent interaction while flying
   let nearest = null;
   let minDist = 4;
   doors.forEach(d => {
@@ -1143,7 +1825,8 @@ function interactDoor() {
       } else {
         nearest.mesh.rotation.y = startRot + Math.PI / 1.5;
         // Remove from walls so we can walk through
-        walls = walls.filter(w => w !== nearest.collider);
+        const index = walls.indexOf(nearest.collider);
+        if (index > -1) walls.splice(index, 1);
       }
     }
     requestAnimationFrame(animateDoor);
@@ -1266,14 +1949,44 @@ function spawnBoss() {
 }
 
 function killZombie(z, silent = false) {
-  if (!silent) speak(z.isBoss ? "NOOOOOO!" : "ow", 0.5, 1.8); 
+  if (!silent) {
+    if (z.isBoss) speak("NOOOOOO!", 0.5, 1.8);
+    else playZombieGroan();
+  }
+  
   createBloodSplatter(z.position);
+
+  // DISMEMBERMENT: Turn body parts into physics objects
+  const parts = [];
+  z.traverse(child => {
+    if (child.isMesh && child !== z.hitbox) {
+      parts.push(child);
+    }
+  });
+
+  parts.forEach(part => {
+    // Get world position before detaching
+    const worldPos = new THREE.Vector3();
+    part.getWorldPosition(worldPos);
+    
+    // Detach from zombie group
+    scene.add(part);
+    part.position.copy(worldPos);
+    
+    // Give it physics
+    part.velocity = new THREE.Vector3((Math.random()-0.5)*0.3, Math.random()*0.4, (Math.random()-0.5)*0.3);
+    part.angularVel = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).multiplyScalar(0.2);
+    part.life = 4.0; // Stay on ground for 4s
+    part.isChunk = true;
+    bloodParticles.push(part);
+  });
+
   if (z.isBoss) {
     createExplosion(z.position);
     doomMusic.pause();
     setTimeout(() => nextFloor(), 3000);
   } else {
-    if (Math.random() < 0.3) spawnMedkit(z.position);
+    if (Math.random() < 0.5) spawnMedkit(z.position);
   }
   
   scene.remove(z); 
@@ -1304,12 +2017,12 @@ function killZombie(z, silent = false) {
 
     if (isSandboxMode) {
       spawnZombie();
-      if (!isNuking && !isAirstriking) spawnZombie(); 
+      // Second spawn removed to reduce craziness
     }
 
     if (isNuking || isAirstriking) return;
 
-    if (!isSandboxMode) {
+    if (!isSandboxMode && !isMissionMode) {
       if (score >= currentFloor * 10 && currentFloor < 10) {
         nextFloor();
       } else if (currentFloor < 10 && zombies.length < 5) {
@@ -1320,10 +2033,12 @@ function killZombie(z, silent = false) {
   }
 }
 
-function createBotModel() {
+function createBotModel(isCivilian = false) {
   const group = new THREE.Group();
+  group.walkCycle = 0;
+
   const skinMat = new THREE.MeshStandardMaterial({ color: 0xdbac98 }); 
-  const tacticalMat = new THREE.MeshStandardMaterial({ color: 0x223322 }); // Dark green tactical gear
+  const tacticalMat = new THREE.MeshStandardMaterial({ color: isCivilian ? 0x2222ff : 0x223322 }); // Blue for civilian
   const pantsMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
   
   // Head
@@ -1339,85 +2054,144 @@ function createBotModel() {
   // Arms
   const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), skinMat);
   armL.position.set(-0.4, 1.3, 0);
+  armL.geometry.translate(0, -0.3, 0); // Pivot at shoulder
   const armR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), skinMat);
   armR.position.set(0.4, 1.3, 0);
+  armR.geometry.translate(0, -0.3, 0); // Pivot at shoulder
   group.add(armL, armR);
+  group.armL = armL; group.armR = armR;
   
   // Legs
   const legL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.7, 0.25), pantsMat);
-  legL.position.set(-0.15, 0.35, 0);
+  legL.position.set(-0.15, 0.7, 0);
+  legL.geometry.translate(0, -0.35, 0); // Pivot at hip
   const legR = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.7, 0.25), pantsMat);
-  legR.position.set(0.15, 0.35, 0);
+  legR.position.set(0.15, 0.7, 0);
+  legR.geometry.translate(0, -0.35, 0); // Pivot at hip
   group.add(legL, legR);
+  group.legL = legL; group.legR = legR;
 
-  // Rifle
-  const rifle = new THREE.Group();
-  const rBody = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.15, 0.6), new THREE.MeshStandardMaterial({ color: 0x111111 }));
-  const rBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4), new THREE.MeshStandardMaterial({ color: 0x333333 }));
-  rBarrel.rotation.x = Math.PI/2; rBarrel.position.z = -0.4;
-  rifle.add(rBody, rBarrel);
-  rifle.position.set(0.4, 1.2, -0.3);
-  group.add(rifle);
+  if (!isCivilian) {
+    // Rifle (Only for soldiers/bots)
+    const rifle = new THREE.Group();
+    const rBody = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.15, 0.6), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+    const rBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+    rBarrel.rotation.x = Math.PI/2; rBarrel.position.z = -0.4;
+    rifle.add(rBody, rBarrel);
+    rifle.position.set(0.4, 1.2, -0.3);
+    group.add(rifle);
+  }
 
   group.scale.set(1.1, 1.1, 1.1);
-  group.traverse(n => { if(n.isMesh) { n.castShadow = true; n.receiveShadow = true; } });
   return group;
 }
 
 function createHelicopter() {
   const group = new THREE.Group();
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
-  const glassMat = new THREE.MeshStandardMaterial({ color: 0x88ccff, transparent: true, opacity: 0.6 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.6, roughness: 0.2 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0x88ccff, transparent: true, opacity: 0.4 });
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.8 });
   
-  // Hollow Body
-  const floor = new THREE.Mesh(new THREE.BoxGeometry(4, 0.2, 8), darkMat);
+  // Body - Main Fuselage
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(4, 0.4, 8), darkMat);
   floor.position.y = -1.4;
   group.add(floor);
   group.floor = floor;
 
-  const roof = new THREE.Mesh(new THREE.BoxGeometry(4, 0.2, 8), darkMat);
-  roof.position.y = 1.4;
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(4, 0.2, 7), darkMat);
+  roof.position.set(0, 1.4, 0.5);
   group.add(roof);
 
-  const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3, 8), darkMat);
+  const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.8, 8), darkMat);
   wallL.position.x = -1.9;
   group.add(wallL);
 
-  const wallR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3, 8), darkMat);
+  const wallR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.8, 8), darkMat);
   wallR.position.x = 1.9;
   group.add(wallR);
 
-  // Front/Cockpit
-  const cockpit = new THREE.Mesh(new THREE.BoxGeometry(3.8, 2, 2), glassMat);
-  cockpit.position.set(0, 0, -4.5);
-  group.add(cockpit);
-  
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(4, 3, 1), darkMat);
-  nose.position.z = -3.5;
+  // Front / Cockpit Area
+  const nose = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2, 3, 4), darkMat);
+  nose.rotation.x = Math.PI / 2;
+  nose.position.set(0, -0.1, -4.5);
   group.add(nose);
+
+  const cockpitGlass = new THREE.Mesh(new THREE.SphereGeometry(1.9, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2), glassMat);
+  cockpitGlass.rotation.x = -Math.PI / 2;
+  cockpitGlass.position.set(0, 0, -5.5);
+  cockpitGlass.scale.z = 0.5;
+  group.add(cockpitGlass);
+
+  // Interior: Seats
+  const seatGeo = new THREE.BoxGeometry(0.8, 0.1, 0.8);
+  const seatMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+  for (let i = 0; i < 4; i++) {
+    const seatL = new THREE.Mesh(seatGeo, seatMat);
+    seatL.position.set(-1.2, -1.2, -2 + i * 1.5);
+    const seatR = new THREE.Mesh(seatGeo, seatMat);
+    seatR.position.set(1.2, -1.2, -2 + i * 1.5);
+    group.add(seatL, seatR);
+  }
+
+  // Engine Housing
+  const engine = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1, 3.5), metalMat);
+  engine.position.set(0, 1.8, 0);
+  group.add(engine);
   
-  // Tail
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 8), darkMat);
-  tail.position.set(0, 1, 7);
-  group.add(tail);
+  // Tail Boom
+  const tailBoom = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.6, 10), darkMat);
+  tailBoom.rotation.x = Math.PI / 2;
+  tailBoom.position.set(0, 1, 7.5);
+  group.add(tailBoom);
+
+  const tailFin = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.5, 1.5), darkMat);
+  tailFin.position.set(0, 2.5, 12);
+  group.add(tailFin);
   
   // Rotors
-  const rotorHub = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1), darkMat);
-  rotorHub.position.y = 2;
+  const rotorHub = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 0.8), metalMat);
+  rotorHub.position.y = 2.4;
   group.add(rotorHub);
   
-  const rotorBladeGeo = new THREE.BoxGeometry(14, 0.1, 1);
+  const rotorBladeGeo = new THREE.BoxGeometry(16, 0.05, 0.8);
   const blades = new THREE.Mesh(rotorBladeGeo, darkMat);
-  blades.position.y = 0.5;
   rotorHub.add(blades);
   group.mainRotor = blades;
 
-  // Skids
-  const skidL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 8), darkMat);
-  skidL.position.set(-2, -2.2, 0);
-  const skidR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 8), darkMat);
-  skidR.position.set(2, -2.2, 0);
+  // Tail Rotor
+  const tailRotorGroup = new THREE.Group();
+  tailRotorGroup.position.set(0.4, 2.5, 12);
+  group.add(tailRotorGroup);
+  const tailRotorBlades = new THREE.Mesh(new THREE.BoxGeometry(0.05, 3, 0.2), metalMat);
+  tailRotorGroup.add(tailRotorBlades);
+  group.tailRotor = tailRotorBlades;
+
+  // Skids / Landing Gear
+  const skidL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 10), metalMat);
+  skidL.position.set(-2, -2.4, 0);
+  const skidR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 10), metalMat);
+  skidR.position.set(2, -2.4, 0);
   group.add(skidL, skidR);
+
+  const legGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.2);
+  for (let i = 0; i < 2; i++) {
+    const legL = new THREE.Mesh(legGeo, metalMat);
+    legL.position.set(-2, -1.8, -2.5 + i * 5);
+    const legR = new THREE.Mesh(legGeo, metalMat);
+    legR.position.set(2, -1.8, -2.5 + i * 5);
+    group.add(legL, legR);
+  }
+
+  // Landing Lights
+  const lightL = new THREE.SpotLight(0xffffff, 20, 30, Math.PI/4, 0.5);
+  lightL.position.set(-1.5, -1, -5);
+  lightL.target.position.set(-1.5, -10, -15);
+  group.add(lightL, lightL.target);
+
+  const lightR = new THREE.SpotLight(0xffffff, 20, 30, Math.PI/4, 0.5);
+  lightR.position.set(1.5, -1, -5);
+  lightR.target.position.set(1.5, -10, -15);
+  group.add(lightR, lightR.target);
   
   group.scale.set(1.5, 1.5, 1.5);
   return group;
@@ -1448,9 +2222,6 @@ function spawnBot(x, z) {
   updateHelperHUD();
 }
 
-for (let i = 0; i < 15; i++) spawnZombie();
-spawnBot(5, 5); spawnBot(-5, -5);
-
 /* INPUT & COMBAT */
 window.addEventListener('keydown', (e) => {
   keys[e.code] = true;
@@ -1475,10 +2246,19 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyX') useNuke();
   if (e.code === 'KeyE') interactDoor();
   if (e.code === 'KeyN') playNukeExplosion(); // TEST KEY FOR LOUD SOUND
+  
+  // Quick Weapon Switch
+  if (e.code === 'Digit1') selectWeapon('pistol');
+  if (e.code === 'Digit2') selectWeapon('ar');
+  if (e.code === 'Digit3') selectWeapon('sniper');
 });
 
 function useAirstrike() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (currentMission === 3) {
+    speak("Air support is unavailable on this bridge. Over.", 0.9, 1);
+    return;
+  }
   if (airstrikes <= 0 || isAirstriking) {
     if (airstrikes <= 0) speak("No airstrikes available.", 1, 1);
     return;
@@ -1524,6 +2304,10 @@ function useAirstrike() {
 
 function useNuke() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
+  if (currentMission === 3) {
+    speak("Negative on the nuke. Too much structural risk to the bridge. Over.", 0.8, 1);
+    return;
+  }
   if (nukes <= 0 || isNuking) {
     if (nukes <= 0) speak("Insufficient nukes.", 1, 1);
     return;
@@ -1714,7 +2498,8 @@ function shoot() {
 let lastTime = performance.now();
 function animate(time) {
   requestAnimationFrame(animate);
-  const dt = (time - lastTime) / 16.67; lastTime = time;
+  let dt = (time - lastTime) / 16.67; lastTime = time;
+  if (dt > 2) dt = 2; // Cap dt to prevent glitches during lag spikes
 
   if (isGameOver) {
     renderer.render(scene, camera);
@@ -1734,10 +2519,43 @@ function animate(time) {
   if (controls.isLocked) {
     // Helicopter Animation
     if (heliGroup) {
-      heliGroup.mainRotor.rotation.y += 0.5 * dt;
-      if (isInserting) {
-        heliGroup.position.z -= 0.05 * dt; // Slow forward drift
-        if (camera.position.y < 5) { // Landed
+      if (heliGroup.mainRotor) heliGroup.mainRotor.rotation.y += (isDrivingHeli ? 1.0 : 0.5) * dt;
+      if (heliGroup.tailRotor) heliGroup.tailRotor.rotation.x += (isDrivingHeli ? 2.0 : 1.0) * dt;
+      
+      if (isDrivingHeli) {
+        // FLIGHT CONTROLS
+        const heliSpeed = 0.5 * dt;
+        const heliRotateSpeed = 0.03 * dt;
+        
+        if (keys['KeyW']) {
+          const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(heliGroup.quaternion);
+          heliGroup.position.addScaledVector(forward, heliSpeed);
+        }
+        if (keys['KeyS']) {
+          const backward = new THREE.Vector3(0, 0, 1).applyQuaternion(heliGroup.quaternion);
+          heliGroup.position.addScaledVector(backward, heliSpeed);
+        }
+        if (keys['KeyA']) heliGroup.rotation.y += heliRotateSpeed;
+        if (keys['KeyD']) heliGroup.rotation.y -= heliRotateSpeed;
+        if (keys['KeyQ']) heliGroup.position.y += 0.2 * dt; // Q is HIGHER
+        if (keys['KeyE']) heliGroup.position.y -= 0.2 * dt; // E is LOWER
+
+        // Keep heli above ground
+        if (heliGroup.position.y < 2.5) heliGroup.position.y = 2.5;
+        
+        // Tilt Effect
+        const tiltTarget = keys['KeyW'] ? 0.2 : (keys['KeyS'] ? -0.2 : 0);
+        heliGroup.rotation.x += (tiltTarget - heliGroup.rotation.x) * 0.1 * dt;
+        
+        const rollTarget = keys['KeyA'] ? 0.1 : (keys['KeyD'] ? -0.1 : 0);
+        heliGroup.rotation.z += (rollTarget - heliGroup.rotation.z) * 0.1 * dt;
+
+      } else if (isInserting) {
+        heliGroup.position.z += 0.05 * dt; // Drifting forward in the new direction
+        
+        // Landed condition: Player is grounded and below the heli height
+        const isGrounded = (playerVelocityY === 0 && camera.position.y < 35);
+        if (isGrounded || camera.position.y < 5) { 
           isInserting = false;
           scene.remove(heliGroup);
           heliGroup = null;
@@ -1748,7 +2566,148 @@ function animate(time) {
 
     // 1. PLAYER INPUTS (Only if NOT downed)
     if (!isPlayerDowned) {
-      const isAiming = keys['KeyQ'];
+      // Mission Hostage Rescue Logic
+      if (isMissionMode) {
+        let activeZone = null;
+        if (currentMission === 1 && rescueCircle) {
+          const distXZ = Math.sqrt(Math.pow(camera.position.x - rescueCircle.position.x, 2) + Math.pow(camera.position.z - rescueCircle.position.z, 2));
+          const distY = Math.abs(camera.position.y - rescueCircle.position.y);
+          if (distXZ < 5 && distY < 4) {
+            activeZone = rescueCircle;
+          }
+        } else if (currentMission === 2) {
+          rescueZones.forEach(zone => {
+            if (camera.position.distanceTo(new THREE.Vector3(zone.position.x, camera.position.y, zone.position.z)) < 5) {
+              activeZone = zone;
+            }
+          });
+        }
+
+        if (activeZone) {
+          playerReviveProgress += (1 / (3 * 60)) * dt;
+          document.getElementById("revive-hud").style.display = "block";
+          document.getElementById("revive-bar-fill").style.width = (playerReviveProgress * 100) + "%";
+          document.querySelector("#revive-hud div").innerText = "RESCUING...";
+          
+          if (playerReviveProgress >= 1) {
+            playerReviveProgress = 0;
+            if (currentMission === 2) {
+              // ... existing mission 2 logic ...
+              scene.remove(activeZone);
+              rescueZones = rescueZones.filter(z => z !== activeZone);
+              rescuedCount++;
+              speak(`Hostage ${rescuedCount} of ${totalCivilians} rescued!`, 1.1, 1.1);
+              
+              let nearestCiv = null; let minDist = Infinity;
+              civilians.forEach(c => {
+                const d = c.position.distanceTo(activeZone.position);
+                if (d < minDist) { minDist = d; nearestCiv = c; }
+              });
+              if (nearestCiv) { scene.remove(nearestCiv); civilians = civilians.filter(c => c !== nearestCiv); }
+
+              if (rescuedCount >= totalCivilians) {
+                speak("All hostages rescued! Head to the helipad at the back of the hospital for extraction!", 1, 1);
+                civiliansCollected = true; // Mark as done for win check
+                heliGroup = createHelicopter();
+                heliGroup.position.set(0, 2.2, 95); 
+                heliGroup.rotation.y = Math.PI; 
+                scene.add(heliGroup);
+              }
+            } else if (currentMission === 1) {
+              // Mission 1 logic
+              speak("Survivors rescued! The extraction helicopter has landed on the helipad. Get in the back of the chopper!", 1.1, 1.1);
+              civilians.forEach(c => scene.remove(c));
+              civilians = [];
+              rescuedCount = totalCivilians;
+              civiliansCollected = true; // ENABLE HELI WIN
+              
+              scene.remove(rescueCircle);
+              rescueCircle = null;
+
+              heliGroup = createHelicopter();
+              heliGroup.position.set(15, 14.2, 0); 
+              heliGroup.rotation.y = -Math.PI / 2;
+              scene.add(heliGroup);
+            }
+          }
+        } else if (playerReviveProgress > 0) {
+          playerReviveProgress = Math.max(0, playerReviveProgress - 0.01 * dt);
+          document.getElementById("revive-bar-fill").style.width = (playerReviveProgress * 100) + "%";
+        }
+
+        // Win condition: Enter ALL THE WAY inside the heli bay after rescue
+        if (civiliansCollected && heliGroup) {
+          const relPos = new THREE.Vector3().subVectors(camera.position, heliGroup.position);
+          relPos.applyQuaternion(heliGroup.quaternion.clone().invert());
+          
+          // Widened detection area (abs Z < 4, abs X < 3)
+          if (Math.abs(relPos.z) < 4 && Math.abs(relPos.x) < 3) {
+             if (currentMission === 3 && !isDrivingHeli) {
+               isDrivingHeli = true;
+               speak("Boarding confirmed. You're in control, pilot. Use WASD to fly, SPACE to climb, and SHIFT to descend.", 1.1, 1);
+               // Snap player to cockpit at SEATED height
+               camera.position.set(0, 0.2, -4.5); // Inside cockpit
+               heliGroup.add(camera); // Parent camera to heli
+               pistolGroup.visible = false; // Hide gun while flying
+               document.getElementById('interaction-hint').style.display = "none";
+             } else if (currentMission !== 3) {
+               speak("Extraction successful! All units aboard. Returning to base. Mission Complete!", 1.1, 1);
+               
+               // Unlock next mission
+               const nextMis = currentMission + 1;
+               if (unlockedMissions < nextMis) {
+                 unlockedMissions = nextMis;
+                 localStorage.setItem("zombieMissionsUnlocked", unlockedMissions);
+                 speak(`Mission ${nextMis} Unlocked!`, 1.2, 1);
+               }
+               
+               isGameOver = true;
+               controls.unlock();
+               document.getElementById("victory-screen").style.display = "flex";
+               document.querySelector("#victory-screen h1").innerText = "MISSION COMPLETE!";
+               document.querySelector("#victory-screen p").innerText = currentMission === 1 ? "Survivors Safely Extracted" : "Facility Secured and Extracted";
+             }
+          }
+        }
+
+        // Flight Landing Check (Mission 3)
+        if (isDrivingHeli && heliBase) {
+          const distToBase = new THREE.Vector3(heliGroup.position.x, 0, heliGroup.position.z).distanceTo(new THREE.Vector3(heliBase.position.x, 0, heliBase.position.z));
+          const heightDiff = heliGroup.position.y - heliBase.position.y;
+          
+          if (distToBase < 8 && heightDiff < 2.5 && heightDiff > 2.0) {
+             speak("Touchdown! Survivors are home safe. Outstanding work, pilot. Mission Complete!", 1.1, 1);
+             
+             const nextMis = currentMission + 1;
+             if (unlockedMissions < nextMis) {
+               unlockedMissions = nextMis;
+               localStorage.setItem("zombieMissionsUnlocked", unlockedMissions);
+             }
+             
+             isGameOver = true;
+             controls.unlock();
+             document.getElementById("victory-screen").style.display = "flex";
+             document.querySelector("#victory-screen h1").innerText = "MISSION COMPLETE!";
+             document.querySelector("#victory-screen p").innerText = "Survivors Returned to Base";
+          }
+        }
+      }
+
+      // Mission 2 Logic: Clear zombies
+      if (isMissionMode && currentMission === 2) {
+        if (zombies.length === 0 && !heliGroup) {
+          speak("Facility Secured! Extraction helicopter is landing on the helipad outside.", 1.1, 1);
+          heliGroup = createHelicopter();
+          heliGroup.position.set(0, 2.2, 95); // Landed on hospital helipad
+          heliGroup.rotation.y = Math.PI; // Tail facing the hospital
+          scene.add(heliGroup);
+          
+          // Allow win check after rescue/clear
+          civiliansCollected = true; 
+        }
+      }
+
+      const isAiming = keys['KeyQ'] && !isDrivingHeli; // Disable Q-Aim while flying
       const isSniperScope = isAiming && currentWeapon.model === 'sniper';
       document.getElementById('sniper-scope').style.display = isSniperScope ? 'block' : 'none';
       document.getElementById('crosshair').style.display = isSniperScope ? 'none' : 'block';
@@ -1758,78 +2717,101 @@ function animate(time) {
       const targetGunX = isAiming ? 0 : 0.4;
       const targetGunY = isAiming ? -0.15 : -0.3;
       
-      camera.fov += (targetFOV - camera.fov) * (1 - Math.pow(0.1, dt/10)); camera.updateProjectionMatrix();
+      if (Math.abs(camera.fov - targetFOV) > 0.1) {
+        camera.fov += (targetFOV - camera.fov) * (1 - Math.pow(0.1, dt/10));
+        camera.updateProjectionMatrix();
+      }
       pistolGroup.position.x += (targetGunX - pistolGroup.position.x) * (1 - Math.pow(0.1, dt/10));
       pistolGroup.position.y += (targetGunY - pistolGroup.position.y) * (1 - Math.pow(0.1, dt/10));
 
-      if (isMouseDown) shoot();
+      if (isMouseDown) {
+        shoot();
+        if (socket && myRoomCode) socket.emit('shoot', { room: myRoomCode });
+      }
       pistolGroup.position.z += (-0.6 - pistolGroup.position.z) * 0.2 * dt;
       if (!isReloading) pistolGroup.rotation.x += (0 - pistolGroup.rotation.x) * 0.2 * dt;
+
+      // ... existing movement logic ...
+      
+      // Multiplayer Sync
+      if (socket && myRoomCode) {
+        socket.emit('move', {
+          room: myRoomCode,
+          pos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+          rot: camera.rotation.y,
+          isMoving: (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'])
+        });
+      }
 
       // Player Movement
       const oldPos = camera.position.clone();
       const isCrouching = keys['KeyC'];
       const isSprinting = keys['ShiftLeft'] || keys['ShiftRight'];
       
-      if (isSprinting && isCrouching && !isSliding && slideTimer <= 0) {
-        isSliding = true;
-        slideTimer = SLIDE_DURATION;
-        camera.getWorldDirection(slideDir);
-        slideDir.y = 0; slideDir.normalize();
+      if (!isDrivingHeli) { // Block movement while driving
+        if (isSprinting && isCrouching && !isSliding && slideTimer <= 0) {
+          isSliding = true;
+          slideTimer = SLIDE_DURATION;
+          camera.getWorldDirection(slideDir);
+          slideDir.y = 0; slideDir.normalize();
+        }
+        if (!isCrouching) isSliding = false;
+
+        let currentHeight = 1.6;
+        let moveSpeed = 0;
+
+        if (isSliding) {
+          currentHeight = 0.8;
+          const slideProgress = slideTimer / SLIDE_DURATION;
+          const currentSlideSpeed = (0.15 + (0.35 * slideProgress)) * dt;
+          camera.position.x += slideDir.x * currentSlideSpeed;
+          camera.position.z += slideDir.z * currentSlideSpeed;
+          slideTimer -= 1 * dt;
+          if (slideTimer <= 0) isSliding = false;
+        } else {
+          currentHeight = isCrouching ? 0.8 : 1.6;
+          let baseSpeed = 0.15;
+          if (isCrouching) baseSpeed = 0.07;
+          else if (isSprinting) baseSpeed = 0.3;
+          moveSpeed = baseSpeed * dt;
+
+          if (keys['KeyW']) controls.moveForward(moveSpeed); if (keys['KeyS']) controls.moveForward(-moveSpeed);
+          if (keys['KeyA']) controls.moveRight(-moveSpeed); if (keys['KeyD']) controls.moveRight(moveSpeed);
+          if (slideTimer > 0) slideTimer -= 1 * dt;
+        }
+        
+        // Wall collisions
+        if (camera.position.x !== oldPos.x || camera.position.z !== oldPos.z) {
+          let pBox = new THREE.Box3().setFromCenterAndSize(camera.position, new THREE.Vector3(0.6, isCrouching ? 1 : 1.8, 0.6));
+          for (const wall of walls) { if (pBox.intersectsBox(wall)) { camera.position.x = oldPos.x; camera.position.z = oldPos.z; break; } }
+        }
+
+        // Vertical
+        let groundedY = currentHeight;
+        raycaster.set(camera.position, new THREE.Vector3(0, -1, 0));
+        raycaster.far = currentHeight + 0.5;
+
+        const collisionTargets = [...wallMeshes, ground];
+        if (heliGroup) collisionTargets.push(heliGroup.floor);
+
+        const floorHits = raycaster.intersectObjects(collisionTargets);
+        if (floorHits.length > 0) groundedY = floorHits[0].point.y + currentHeight;
+
+        if (keys['Space'] && camera.position.y <= groundedY + 0.1 && playerVelocityY <= 0) playerVelocityY = 0.25;
+        playerVelocityY += GRAVITY * dt;
+        camera.position.y += playerVelocityY * dt;
+        
+        if (camera.position.y < groundedY) { camera.position.y = groundedY; playerVelocityY = 0; }
+        if (playerVelocityY === 0) camera.position.y += (groundedY - camera.position.y) * 0.2 * dt;
       }
-      if (!isCrouching) isSliding = false;
-
-      let currentHeight = 1.6;
-      let moveSpeed = 0;
-
-      if (isSliding) {
-        currentHeight = 0.8;
-        const slideProgress = slideTimer / SLIDE_DURATION;
-        const currentSlideSpeed = (0.15 + (0.35 * slideProgress)) * dt;
-        camera.position.x += slideDir.x * currentSlideSpeed;
-        camera.position.z += slideDir.z * currentSlideSpeed;
-        slideTimer -= 1 * dt;
-        if (slideTimer <= 0) isSliding = false;
-      } else {
-        currentHeight = isCrouching ? 0.8 : 1.6;
-        let baseSpeed = 0.15;
-        if (isCrouching) baseSpeed = 0.07;
-        else if (isSprinting) baseSpeed = 0.3;
-        moveSpeed = baseSpeed * dt;
-
-        if (keys['KeyW']) controls.moveForward(moveSpeed); if (keys['KeyS']) controls.moveForward(-moveSpeed);
-        if (keys['KeyA']) controls.moveRight(-moveSpeed); if (keys['KeyD']) controls.moveRight(moveSpeed);
-        if (slideTimer > 0) slideTimer -= 1 * dt;
-      }
-      
-      // Wall collisions
-      if (camera.position.x !== oldPos.x || camera.position.z !== oldPos.z) {
-        let pBox = new THREE.Box3().setFromCenterAndSize(camera.position, new THREE.Vector3(0.6, isCrouching ? 1 : 1.8, 0.6));
-        for (const wall of walls) { if (pBox.intersectsBox(wall)) { camera.position.x = oldPos.x; camera.position.z = oldPos.z; break; } }
-      }
-
-      // Vertical
-      let groundedY = currentHeight;
-      const floorRay = new THREE.Raycaster(camera.position, new THREE.Vector3(0, -1, 0), 0, currentHeight + 0.5);
-
-      const collisionTargets = [...wallMeshes, ground];
-      if (heliGroup) collisionTargets.push(heliGroup.floor);
-
-      const floorHits = floorRay.intersectObjects(collisionTargets);
-      if (floorHits.length > 0) groundedY = floorHits[0].point.y + currentHeight;
-
-      if (keys['Space'] && camera.position.y <= groundedY + 0.1 && playerVelocityY <= 0) playerVelocityY = 0.25;
-      playerVelocityY += GRAVITY * dt;
-      camera.position.y += playerVelocityY * dt;
-      
-      if (camera.position.y < groundedY) { camera.position.y = groundedY; playerVelocityY = 0; }
-      if (playerVelocityY === 0) camera.position.y += (groundedY - camera.position.y) * 0.2 * dt;
 
       // Interaction Hint Logic
       let showHint = false;
-      doors.forEach(d => {
-        if (!d.isOpen && camera.position.distanceTo(d.position) < 4) showHint = true;
-      });
+      if (!isDrivingHeli) { // Hide hints while flying
+        doors.forEach(d => {
+          if (!d.isOpen && camera.position.distanceTo(d.position) < 4) showHint = true;
+        });
+      }
       document.getElementById('interaction-hint').style.display = showHint ? 'block' : 'none';
     } else {
       // Player is downed - ensure HUD elements are clean
@@ -1840,6 +2822,32 @@ function animate(time) {
 
     // 2. ENTITY UPDATES (Always run while locked)
     
+    // Civilians (Mission Mode)
+    civilians.forEach((civ, i) => {
+      if (currentMission === 3) {
+        // Survivors move across the bridge
+        const speed = BASE_ENTITY_SPEED * dt;
+        civ.position.z += speed;
+        civ.lookAt(civ.position.x, civ.position.y, civ.position.z + 1);
+        animateEntity(civ, dt, true);
+        
+        // Check if reached end
+        if (civ.position.z >= 90) {
+          scene.remove(civ);
+          civilians.splice(i, 1);
+          rescuedCount++;
+          speak(`Survivor ${rescuedCount} made it!`, 1.1, 1.2);
+          
+          if (rescuedCount >= totalCivilians) {
+            speak("All survivors are safe! Get in the helicopter and fly us back to base!", 1, 1);
+            civiliansCollected = true;
+            document.getElementById('interaction-hint').innerText = "GET IN THE BACK";
+            document.getElementById('interaction-hint').style.display = "block";
+          }
+        }
+      }
+    });
+
     // Bots
     let anyBotReviving = false;
     bots.forEach(bot => {
@@ -1873,7 +2881,7 @@ function animate(time) {
 
       bot.lookAt(bot.targetPos.x, bot.position.y, bot.targetPos.z);
       const dirToTarget = new THREE.Vector3().subVectors(bot.targetPos, bot.position).normalize();
-      const botSpeed = isPlayerDowned ? 0.25 : 0.04;
+      const botSpeed = isPlayerDowned ? BASE_ENTITY_SPEED * 2 : BASE_ENTITY_SPEED;
       
       bot.position.x += dirToTarget.x * botSpeed * dt;
       let bBox = new THREE.Box3().setFromCenterAndSize(bot.position.clone().add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(1, 2, 1));
@@ -1881,6 +2889,8 @@ function animate(time) {
       bot.position.z += dirToTarget.z * botSpeed * dt;
       bBox = new THREE.Box3().setFromCenterAndSize(bot.position.clone().add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(1, 2, 1));
       for (const wall of walls) { if (bBox.intersectsBox(wall)) { bot.position.z = oldBotPos.z; break; } }
+      
+      animateEntity(bot, dt, true, botSpeed / BASE_ENTITY_SPEED);
 
       if (isPlayerDowned) {
         if (bot.position.distanceTo(camera.position) < 8) {
@@ -1908,8 +2918,13 @@ function animate(time) {
 
     // Sandbox Spawning
     if (isSandboxMode && !isNuking && zombies.length < 15) spawnZombie();
+    
+    // Normal Floor Spawning (Don't spawn in mission mode)
+    if (!isSandboxMode && !isMissionMode && !isNuking && !isChangingFloor && zombies.length < 5 && currentFloor < 10) {
+      spawnZombie();
+    }
 
-    // Zombies
+    // Zombies Logic
     zombies.forEach(z => {
       const zRay = new THREE.Raycaster(new THREE.Vector3(z.position.x, z.position.y + 2, z.position.z), new THREE.Vector3(0, -1, 0), 0, 5);
       const zHits = zRay.intersectObjects([...wallMeshes, ground]);
@@ -1920,9 +2935,16 @@ function animate(time) {
       let targetType = 'player';
       let targetObj = null;
 
+      // Target Bots
       bots.forEach(bot => {
         const d = z.position.distanceTo(bot.position);
         if (d < targetDist) { targetDist = d; targetPos = bot.position.clone(); targetType = 'bot'; targetObj = bot; }
+      });
+
+      // Target Civilians (High Priority for Mission 3)
+      civilians.forEach(civ => {
+        const d = z.position.distanceTo(civ.position);
+        if (d < targetDist) { targetDist = d; targetPos = civ.position.clone(); targetType = 'civilian'; targetObj = civ; }
       });
 
       z.lookAt(targetPos.x, z.position.y, targetPos.z);
@@ -1930,14 +2952,20 @@ function animate(time) {
       if (targetDist > (z.isBoss ? 8 : 2)) {
         const oldZomPos = z.position.clone();
         const dir = new THREE.Vector3().subVectors(targetPos, z.position).normalize();
-        let speedMult = z.isBoss ? 2.5 : 1;
-        if (z.isRunner) speedMult = 2.0; // Runners are twice as fast
+        let speedMult = z.isBoss ? 2.5 : 1.0; // Perfectly matched to NPC speed
+        if (z.isRunner) speedMult = 1.8; 
         
-        z.position.x += dir.x * (0.05 + currentFloor * 0.01) * dt * speedMult; 
-        z.position.z += dir.z * (0.05 + currentFloor * 0.01) * dt * speedMult;
+        const zSpeed = BASE_ENTITY_SPEED * speedMult;
+        z.position.x += dir.x * zSpeed * dt; 
+        z.position.z += dir.z * zSpeed * dt;
+        
         const zSize = z.isBoss ? 4 : 0.8;
         const zBox = new THREE.Box3().setFromCenterAndSize(z.position.clone().add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(zSize, 2, zSize));
         for (const wall of walls) { if (zBox.intersectsBox(wall)) { z.position.copy(oldZomPos); break; } }
+        
+        animateEntity(z, dt, true, speedMult);
+      } else {
+        animateEntity(z, dt, false);
       }
 
       if (targetDist < (z.isBoss ? 10 : 2.5) && Date.now() - z.lastHit > 1000) {
@@ -1970,18 +2998,38 @@ function animate(time) {
             speak(targetObj.name + " is down!", 1, 1.2);
           }
           updateHelperHUD();
+        } else if (targetType === 'civilian') {
+          createBloodSplatter(targetObj.position);
+          scene.remove(targetObj);
+          civilians = civilians.filter(c => c !== targetObj);
+          totalCivilians--; 
+          speak("We lost a survivor!", 0.8, 1.1);
+          
+          if (totalCivilians === 0 && rescuedCount === 0) {
+            isGameOver = true;
+            speak("Mission Failed. All survivors were lost.", 0.5, 1);
+            controls.unlock();
+            document.getElementById("death-screen").style.display = "flex";
+            document.querySelector("#death-screen h1").innerText = "MISSION FAILED";
+          }
         }
       }
     });
 
     // Medkits, Bullets, Blood, Grenades...
-    medkits.forEach((med, i) => {
-      med.rotation.y += 0.05 * dt;
+    for (let i = medkits.length - 1; i >= 0; i--) {
+      const med = medkits[i];
+      med.rotation.y += 0.03 * dt;
+      med.position.y = 0.5 + Math.sin(Date.now() * 0.005) * 0.2; // Float up and down
+      
       if (med.position.distanceTo(camera.position) < 2) {
-        health = 8; document.getElementById("hp").style.width = "200px";
-        scene.remove(med); medkits.splice(i, 1); speak("Healed!", 1.2, 1.2);
+        health = 8; 
+        document.getElementById("hp").style.width = "200px";
+        scene.remove(med); 
+        medkits.splice(i, 1); 
+        speak("Healed!", 1.2, 1.2);
       }
-    });
+    }
 
     bullets.forEach((b, i) => {
       b.position.addScaledVector(b.velocity, dt); b.life -= 1 * dt;
