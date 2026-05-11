@@ -2,94 +2,43 @@
 <html>
 <head>
   <title>Zombie Arena 3D</title>
-  <style>
-    body { margin: 0; overflow: hidden; background: #1a0d0a; font-family: Arial; }
-    #hud { position: absolute; top: 10px; left: 10px; color: white; z-index: 1000; text-shadow: 2px 2px black; pointer-events: none; }
-    #stats { margin-top: 10px; font-size: 18px; }
-    #hpbar { width: 200px; height: 15px; border: 2px solid white; margin-top: 5px; background: rgba(0,0,0,0.5); }
-    #hp { width: 100%; height: 100%; background: #ff3333; transition: width 0.2s; }
-    #boss-hud { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 60%; display: none; text-align: center; color: white; z-index: 1000; text-shadow: 2px 2px black; }
-    #boss-hp-bg { width: 100%; height: 25px; border: 3px solid white; background: rgba(0,0,0,0.5); margin-top: 10px; }
-    #boss-hp-fill { width: 100%; height: 100%; background: #990000; transition: width 0.1s; }
-    #revive-hud { position: absolute; top: 50%; left: 50%; transform: translate(-50%, 40px); color: white; display: none; text-align: center; z-index: 1000; text-shadow: 2px 2px black; pointer-events: none; }
-    #revive-bar-bg { width: 150px; height: 10px; border: 2px solid white; background: rgba(0,0,0,0.5); margin-top: 5px; }
-    #revive-bar-fill { width: 0%; height: 100%; background: #00ccff; }
-    #helper-hud { position: absolute; top: 10px; right: 10px; color: white; z-index: 1000; text-align: right; pointer-events: none; }
-    #nuke-hud { position: absolute; top: 70px; left: 10px; color: #ffff00; font-weight: bold; font-size: 20px; text-shadow: 2px 2px black; display: none; }
-    .helper-status { margin-bottom: 5px; font-size: 14px; text-shadow: 1px 1px black; }
-    #interaction-hint { position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%); color: white; display: none; font-weight: bold; font-size: 24px; text-shadow: 2px 2px black; z-index: 1000; }
-    .helper-hp-bg { width: 120px; height: 8px; border: 1px solid white; background: rgba(0,0,0,0.5); display: inline-block; margin-left: 5px; }
-    .helper-hp-fill { height: 100%; background: #00ff00; transition: width 0.2s; }
-    #crosshair { position: fixed; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid red; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 2000; }
-    #sniper-scope {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      width: 100vmax;
-      height: 100vmax;
-      transform: translate(-50%, -50%);
-      background: radial-gradient(circle, transparent 20%, black 21%);
-      display: none;
-      z-index: 2500;
-      pointer-events: none;
-    }
-    #sniper-scope::before, #sniper-scope::after {
-      content: '';
-      position: absolute;
-      background: rgba(255, 255, 255, 0.5);
-    }
-    #sniper-scope::before {
-      top: 50%;
-      left: 0;
-      width: 100%;
-      height: 2px;
-      transform: translateY(-50%);
-    }
-    #sniper-scope::after {
-      left: 50%;
-      top: 0;
-      width: 2px;
-      height: 100%;
-      transform: translateX(-50%);
-    }
-    #death-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(139, 0, 0, 0.9); color: white; display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 3000; cursor: pointer; }
-    #death-screen h1 { font-size: 100px; margin-bottom: 20px; text-shadow: 5px 5px black; }
-    #death-screen p { font-size: 24px; }
-    #instructions { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; text-align: center; background: rgba(0,0,0,0.9); padding: 30px; border-radius: 15px; z-index: 2500; border: 2px solid #555; min-width: 350px; }
-    .weapon-selector { margin: 20px 0; display: flex; justify-content: center; gap: 10px; }
-    .weapon-btn { background: #333; color: white; border: 2px solid #555; padding: 10px; cursor: pointer; transition: all 0.2s; border-radius: 5px; }
-    .weapon-btn:hover { background: #444; border-color: #999; }
-    .weapon-btn.selected { border-color: #ff3333; background: #552222; }
-    #equip-btn { background: #aa0000; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 15px; display: none; }
-    #equip-btn:hover { background: #cc0000; transform: scale(1.05); }
-    #weapon-info { margin-top: 10px; font-size: 14px; color: #aaa; min-height: 20px; }
-    
-    /* Body Cam Overlay */
-    #body-cam {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: 2800;
-      box-shadow: inset 0 0 150px rgba(0,0,0,0.8);
-      display: none;
-    }
-    #rec-dot {
-      position: absolute;
-      top: 30px;
-      left: 30px;
-      color: red;
-      font-weight: bold;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 24px;
-      animation: blink 1s infinite;
-    }
-    @keyframes blink { 50% { opacity: 0; } }
-  </style>
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+
+<!-- BEGIN sound elements -->
+<audio id="boop">
+  <source src="boop.m4a" type="audio/mp4">
+</audio>
+
+<audio id="zombie_die">
+  <source src="sounds/zombie.m4a" type="audio/mp4">
+</audio>
+
+<audio id="all_zombies_die">
+  <source src="all_zombies_die.m4a" type="audio/mp4">
+</audio>
+
+<audio id="player_hurt">
+  <source src="sounds/hurt.m4a" type="audio/mp4">
+</audio>
+
+<audio id="player_down">
+  <source src="sounds/help.m4a" type="audio/mp4">
+</audio>
+
+<audio id="weapon_reload">
+  <source src="reloading.m4a" type="audio/mp4">
+</audio>
+
+<audio id="custom_nuke">
+  <source src="Nuke.m4a" type="audio/mp4">
+</audio>
+
+<audio id="mission_go">
+  <source src="Go.m4a" type="audio/mp4">
+</audio>
+<!-- END sound elements -->
 
 <div id="body-cam">
   <div id="rec-dot">● REC</div>
@@ -214,6 +163,8 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
+const USE_NEW_SOUNDS = true;
+
 let otherPlayers = {};
 let socket = null;
 let myRoomCode = null;
@@ -330,7 +281,8 @@ let isNuking = false;
 let isAirstriking = false;
 let isChangingFloor = false;
 let isInserting = false;
-let heliGroup = null;
+let insertionHeli = null;
+let heliGroup = null; // This will be the mission/flyable heli
 let isDrivingHeli = false; // NEW
 let heliBase = null; // NEW
 let boss = null;
@@ -475,11 +427,17 @@ window.startGame = function() {
     return;
   }
   gameStarted = true;
+
+  // TODO temp test to hear native sounds we make:
+  let sound = document.getElementById("boop");
+  sound.currentTime = 0;
+  sound.play();
+  
   document.getElementById('final-start-btn').innerText = "RESUME GAME";
 
   if (isSandboxMode) {
     document.getElementById("floor").innerText = "∞";
-    speak("Sandbox Mode. Infinite arena with buildings.", 1, 1.2);
+    speak("Sandbox Mode. Infinite arena.", 1, 1.2);
     clearWalls();
     // Simple outer walls only
     createWall(100, 0, 10, 200); createWall(-100, 0, 10, 200);
@@ -508,34 +466,37 @@ window.startGame = function() {
   
   // Helicopter Insertion
   isInserting = true;
-  heliGroup = createHelicopter();
-  heliGroup.rotation.y = Math.PI; // Flipped around
-  
+  insertionHeli = createHelicopter();
+  insertionHeli.rotation.y = Math.PI; // Flipped around
+
   if (isMissionMode && currentMission === 1) {
-    heliGroup.position.set(0, 40, 30); // Positioned to jump onto building at (0,0)
+    insertionHeli.position.set(0, 40, 30); // Positioned to jump onto building at (0,0)
     camera.position.set(0, 40, 28); // Adjusted camera to stay inside the flipped heli
   } else if (isMissionMode && currentMission === 2) {
-    heliGroup.position.set(0, 40, -100); // Positioned at the start of the hallway
+    insertionHeli.position.set(0, 40, -100); // Positioned at the start of the hallway
     camera.position.set(0, 40, -102); 
+  } else if (isMissionMode && currentMission === 3) {
+    insertionHeli.position.set(0, 35, 90); // Now spawning on the other side
+    insertionHeli.rotation.y = 0; // Face back towards the bridge
+    camera.position.set(0, 35, 92);
   } else {
-    heliGroup.position.set(0, 40, 50);
+    insertionHeli.position.set(0, 40, 50);
     camera.position.set(0, 40, 48); // Adjusted camera
   }
-  
-  scene.add(heliGroup);
-  
+
+  scene.add(insertionHeli);  
   document.getElementById('body-cam').style.display = 'block';
   controls.lock();
   
   setTimeout(() => {
-    speak("JUMP OUT!", 1, 1.2);
+    if (!isMissionMode) speak("JUMP OUT!", 1, 1.2);
   }, 1000);
 };
 
 function setupMission1() {
   clearWalls();
   document.getElementById("floor").innerText = "M1";
-  speak("Mission 1: Rescue survivors inside. Head to the second floor!", 1, 1);
+  playSound("mission_go");
   
   // Outer Bounds
   createWall(100, 0, 10, 200); createWall(-100, 0, 10, 200);
@@ -574,7 +535,7 @@ function setupMission2() {
   clearWalls();
   rescueZones = [];
   document.getElementById("floor").innerText = "M2";
-  speak("Mission 2: Breach the rooms and save the hostages. Use E to open doors.", 1, 1);
+  playSound("mission_go");
   
   // Outer Bounds
   createWall(100, 0, 10, 200); createWall(-100, 0, 10, 200);
@@ -684,7 +645,7 @@ function createRescueCircle(x, y, z, isMultiple = false) {
 function setupMission3() {
   clearWalls();
   document.getElementById("floor").innerText = "M3";
-  speak("Mission 3: Bridge Defense. Protect the survivors and get them to the other side!", 1, 1);
+  playSound("mission_go");
   
   // The Bridge
   const bridgeWidth = 12;
@@ -741,8 +702,8 @@ function setupMission3() {
 
   // Set Helicopter for extraction
   heliGroup = createHelicopter();
-  heliGroup.position.set(0, bridgeHeight + 2.2, 95);
-  heliGroup.rotation.y = Math.PI;
+  heliGroup.position.set(0, bridgeHeight + 2.2, 110); // Moved further back to avoid spawning inside player
+  heliGroup.rotation.y = Math.PI; // Nose facing Z+ (the waypoints)
   scene.add(heliGroup);
   
   // Boarding Circle for Heli
@@ -753,7 +714,7 @@ function setupMission3() {
   circle.rotation.x = -Math.PI / 2;
   circle.position.y = 0.1;
   boardCircle.add(circle);
-  boardCircle.position.set(0, bridgeHeight, 95);
+  boardCircle.position.set(0, bridgeHeight, 105); // Placed at the back of the heli
   scene.add(boardCircle);
   rescueZones.push(boardCircle); // Reuse rescue zones for detection
 
@@ -801,9 +762,26 @@ function setupMission3() {
   beam.position.y = 1000;
   baseGroup.add(beam);
 
-  baseGroup.position.set(0, 5, 400); // Far away
+  baseGroup.position.set(0, 5, 600); // Moved further away
   scene.add(baseGroup);
   heliBase = baseGroup;
+
+  // Yellow Waypoint Circle
+  const yCircle = new THREE.Mesh(new THREE.RingGeometry(15, 20, 32), new THREE.MeshBasicMaterial({ color: 0xffff00, side: THREE.DoubleSide, transparent: true, opacity: 0.6 }));
+  yCircle.rotation.x = -Math.PI / 2;
+  yCircle.position.set(0, 100, 200); // Higher and closer
+  yCircle.name = "yellowWaypoint";
+  scene.add(yCircle);
+  
+  // Green Waypoint Circle
+  const gCircle = new THREE.Mesh(new THREE.RingGeometry(15, 20, 32), new THREE.MeshBasicMaterial({ color: 0x00ff00, side: THREE.DoubleSide, transparent: true, opacity: 0.6 }));
+  gCircle.rotation.x = -Math.PI / 2;
+  gCircle.position.set(0, 100, 450);
+  gCircle.name = "greenWaypoint";
+  scene.add(gCircle);
+  
+  window.hasReachedYellow = false;
+  window.hasReachedGreen = false;
 }
 
 function spawnCivilian(x, y, z) {
@@ -1461,6 +1439,15 @@ function playRadioEffect() {
 }
 
 function playZombieGroan() {
+  if (USE_NEW_SOUNDS){
+    //zombie_die
+    let sound = document.getElementById("zombie_die");
+    sound.currentTime = 0;
+    sound.play();
+    return;
+  }
+
+  // old zombie die sounds... TODO: remove if needed
   if (audioCtx.state === 'suspended') audioCtx.resume();
   const duration = 0.6 + Math.random() * 0.4;
   const pitchShift = 0.8 + Math.random() * 0.4;
@@ -1528,6 +1515,14 @@ function speak(text, source = 'command', pitch = 1, rate = 1) {
   }
 
   window.speechSynthesis.speak(utt);
+}
+
+function playSound(id) {
+  const sound = document.getElementById(id);
+  if (sound) {
+    sound.currentTime = 0;
+    sound.play().catch(e => console.log("Sound playback failed:", e));
+  }
 }
 
 /* ENTITY LOGIC */
@@ -1857,6 +1852,7 @@ function explodeBarrel(barrel) {
   const distToPlayer = camera.position.distanceTo(explosionPos);
   if (distToPlayer < 8) {
     health -= (8 - distToPlayer) * 1.5;
+    playSound("player_hurt");
     document.getElementById("hp").style.width = (Math.max(0, health) / 8 * 200) + "px";
     if (health <= 0 && !isGameOver) {
        isGameOver = true; speak("Killed by explosive barrel!", 0.4, 1.4); controls.unlock();
@@ -2245,8 +2241,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') useAirstrike();
   if (e.code === 'KeyX') useNuke();
   if (e.code === 'KeyE') interactDoor();
-  if (e.code === 'KeyN') playNukeExplosion(); // TEST KEY FOR LOUD SOUND
-  
+
   // Quick Weapon Switch
   if (e.code === 'Digit1') selectWeapon('pistol');
   if (e.code === 'Digit2') selectWeapon('ar');
@@ -2331,7 +2326,7 @@ function useNuke() {
       requestAnimationFrame(animateDetonator);
     } else {
       detonatorGroup.position.y = -0.2;
-      speak("TACTICAL NUKE INCOMING!", 0.5, 0.8);
+      playSound("custom_nuke");
       
       // Press Button after 1 second
       setTimeout(() => {
@@ -2348,7 +2343,11 @@ function useNuke() {
           
           // Screen shake
           shakeAmount = 4.0;
-          speak("ahhhhhhhhhh", 0.3, 0.5);
+          // speak("ahhhhhhh", 0.3, 0.5);
+          let azd = document.getElementById("all_zombies_die");
+          azd.currentTime = 0;
+          azd.play();
+
 
           // Kill all currently visible zombies (except boss)
           [...zombies].forEach(z => {
@@ -2431,7 +2430,7 @@ const raycaster = new THREE.Raycaster();
 function reload() {
   if (isReloading || currentAmmo === currentWeapon.maxAmmo) return;
   isReloading = true;
-  speak("Reloading", 1, 1.2);
+  playSound("weapon_reload");
   pistolGroup.rotation.x = 0.5;
   setTimeout(() => {
     currentAmmo = currentWeapon.maxAmmo;
@@ -2517,7 +2516,23 @@ function animate(time) {
   }
 
   if (controls.isLocked) {
-    // Helicopter Animation
+    // 0. HELICOPTER LOGIC
+    if (insertionHeli) {
+      if (insertionHeli.mainRotor) insertionHeli.mainRotor.rotation.y += 0.5 * dt;
+      if (insertionHeli.tailRotor) insertionHeli.tailRotor.rotation.x += 1.0 * dt;
+      
+      if (isInserting) {
+        insertionHeli.position.z += 0.05 * dt;
+        const isGrounded = (playerVelocityY === 0 && camera.position.y < 35);
+        if (isGrounded || camera.position.y < 5) { 
+          isInserting = false;
+          scene.remove(insertionHeli);
+          insertionHeli = null;
+          speak("Good luck and dont die.", 1, 1);
+        }
+      }
+    }
+
     if (heliGroup) {
       if (heliGroup.mainRotor) heliGroup.mainRotor.rotation.y += (isDrivingHeli ? 1.0 : 0.5) * dt;
       if (heliGroup.tailRotor) heliGroup.tailRotor.rotation.x += (isDrivingHeli ? 2.0 : 1.0) * dt;
@@ -2537,29 +2552,32 @@ function animate(time) {
         }
         if (keys['KeyA']) heliGroup.rotation.y += heliRotateSpeed;
         if (keys['KeyD']) heliGroup.rotation.y -= heliRotateSpeed;
-        if (keys['KeyQ']) heliGroup.position.y += 0.2 * dt; // Q is HIGHER
-        if (keys['KeyE']) heliGroup.position.y -= 0.2 * dt; // E is LOWER
+        if (keys['KeyQ'] || keys['Space']) heliGroup.position.y += 0.2 * dt; // SPACE is also UP
+        if (keys['KeyE'] || keys['ShiftLeft']) heliGroup.position.y -= 0.2 * dt; // SHIFT is also DOWN
 
-        // Keep heli above ground
         if (heliGroup.position.y < 2.5) heliGroup.position.y = 2.5;
         
-        // Tilt Effect
         const tiltTarget = keys['KeyW'] ? 0.2 : (keys['KeyS'] ? -0.2 : 0);
         heliGroup.rotation.x += (tiltTarget - heliGroup.rotation.x) * 0.1 * dt;
-        
         const rollTarget = keys['KeyA'] ? 0.1 : (keys['KeyD'] ? -0.1 : 0);
         heliGroup.rotation.z += (rollTarget - heliGroup.rotation.z) * 0.1 * dt;
 
-      } else if (isInserting) {
-        heliGroup.position.z += 0.05 * dt; // Drifting forward in the new direction
-        
-        // Landed condition: Player is grounded and below the heli height
-        const isGrounded = (playerVelocityY === 0 && camera.position.y < 35);
-        if (isGrounded || camera.position.y < 5) { 
-          isInserting = false;
-          scene.remove(heliGroup);
-          heliGroup = null;
-          speak("Good luck, soldier.", 1, 1);
+        // MISSION 3 WAYPOINT LOGIC
+        if (currentMission === 3) {
+          const heliPos = heliGroup.position;
+          if (!window.hasReachedYellow) {
+            const yWay = scene.getObjectByName("yellowWaypoint");
+            if (yWay && heliPos.distanceTo(yWay.position) < 40) { // FOOLPROOF RANGE
+              window.hasReachedYellow = true; scene.remove(yWay);
+              speak("Good. Waypoint reached. Continue to the green landing zone.", 1, 1);
+            }
+          } else if (!window.hasReachedGreen) {
+            const gWay = scene.getObjectByName("greenWaypoint");
+            if (gWay && heliPos.distanceTo(gWay.position) < 40) {
+              window.hasReachedGreen = true; scene.remove(gWay);
+              speak("ok now fly us back to base", 1, 1);
+            }
+          }
         }
       }
     }
@@ -2615,7 +2633,7 @@ function animate(time) {
               }
             } else if (currentMission === 1) {
               // Mission 1 logic
-              speak("Survivors rescued! The extraction helicopter has landed on the helipad. Get in the back of the chopper!", 1.1, 1.1);
+              speak("Survivors rescued! Get in the back of the Helicopter and fly out!", 1.1, 1.1)
               civilians.forEach(c => scene.remove(c));
               civilians = [];
               rescuedCount = totalCivilians;
@@ -2917,7 +2935,7 @@ function animate(time) {
     if (!anyBotReviving) document.getElementById("revive-hud").style.display = "none";
 
     // Sandbox Spawning
-    if (isSandboxMode && !isNuking && zombies.length < 15) spawnZombie();
+    if (isSandboxMode && !isNuking && zombies.length < 100) spawnZombie();
     
     // Normal Floor Spawning (Don't spawn in mission mode)
     if (!isSandboxMode && !isMissionMode && !isNuking && !isChangingFloor && zombies.length < 5 && currentFloor < 10) {
@@ -2972,12 +2990,14 @@ function animate(time) {
         z.lastHit = Date.now(); playPunchSound();
         if (targetType === 'player' && !isPlayerDowned) {
           health -= z.isBoss ? 2.0 : 1.0; 
+          playSound("player_hurt");
           document.getElementById("hp").style.width = (Math.max(0, health) / 8 * 200) + "px";
           if (health <= 0) {
             const anyoneUp = bots.some(b => !b.isDowned);
             if (anyoneUp) {
               isPlayerDowned = true; playerReviveProgress = 0;
               document.getElementById("player-revive-hud").style.display = "block";
+              playSound("player_down");
               speak("I'm hit! Help me!", 1, 1);
               setTimeout(() => speak("Hang in there, we're coming!", 1, 1), 1500);
               bots.forEach(b => { if(!b.isDowned) b.targetPos.copy(camera.position); });
@@ -3075,7 +3095,9 @@ function animate(time) {
         [...zombies].forEach(z => { if (z.position.distanceTo(g.position) < 15) killZombie(z); });
         const distToPlayer = camera.position.distanceTo(g.position);
         if (distToPlayer < 10) {
-          health -= (10 - distToPlayer) * 0.8; document.getElementById("hp").style.width = (Math.max(0, health) / 8 * 200) + "px";
+          health -= (10 - distToPlayer) * 0.8; 
+          playSound("player_hurt");
+          document.getElementById("hp").style.width = (Math.max(0, health) / 8 * 200) + "px";
           if (health <= 0 && !isGameOver) {
              isGameOver = true; speak("Killed by own grenade!", 0.4, 1.4); controls.unlock();
              document.getElementById("death-stats").innerText = `Kills: ${score} | Floor: ${currentFloor}`;
@@ -3111,4 +3133,6 @@ window.addEventListener('resize', () => {
 requestAnimationFrame(animate);
 </script>
 </body>
+</html>>
+</html>y>
 </html>
