@@ -7,12 +7,24 @@
 <body>
 
 <!-- BEGIN sound elements -->
+<audio id="good-luck">
+  <source src="good-luck.m4a" type="audio/mp4">
+</audio>
+
+<audio id="grenade-out">
+  <source src="grenade-out.m4a" type="audio/mp4">
+</audio>
+
+<audio id="cooldown">
+  <source src="cooldown.m4a" type="audio/mp4">
+</audio>
+
 <audio id="boop">
   <source src="boop.m4a" type="audio/mp4">
 </audio>
 
 <audio id="zombie_die">
-  <source src="sounds/zombie.m4a" type="audio/mp4">
+  <source src="zombiedie.m4a" type="audio/mp4">
 </audio>
 
 <audio id="all_zombies_die">
@@ -427,11 +439,15 @@ window.startGame = function() {
     return;
   }
   gameStarted = true;
-
-  // TODO temp test to hear native sounds we make:
-  let sound = document.getElementById("boop");
-  sound.currentTime = 0;
-  sound.play();
+  
+  if (!isSandboxMode && !isMissionMode) {
+    playSound("good-luck");
+  } else {
+    // Only play boop for other modes
+    let sound = document.getElementById("boop");
+    sound.currentTime = 0;
+    sound.play();
+  }
   
   document.getElementById('final-start-btn').innerText = "RESUME GAME";
 
@@ -489,7 +505,7 @@ window.startGame = function() {
   controls.lock();
   
   setTimeout(() => {
-    if (!isMissionMode) speak("JUMP OUT!", 1, 1.2);
+    if (!isMissionMode && (isSandboxMode)) speak("JUMP OUT!", 1, 1.2);
   }, 1000);
 };
 
@@ -808,7 +824,7 @@ function spawnZombieAt(x, y, z) {
   zom.position.set(x, y, z);
   zom.hp = 3;
   zom.lastHit = 0;
-  const hitboxGeo = new THREE.BoxGeometry(1.8, 2.5, 1.8);
+  const hitboxGeo = new THREE.BoxGeometry(3.0, 4.0, 3.0);
   const hitbox = new THREE.Mesh(hitboxGeo, new THREE.MeshBasicMaterial({ visible: false }));
   hitbox.position.y = 1;
   zom.add(hitbox);
@@ -1368,9 +1384,27 @@ function playNukeExplosion() {
   gain.gain.setValueAtTime(3.0, audioCtx.currentTime); // VERY LOUD
   gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
 
+  // Smoother Echo effect with filtering
+  const delay = audioCtx.createDelay(1.0);
+  delay.delayTime.setValueAtTime(0.35, audioCtx.currentTime);
+  
+  const feedback = audioCtx.createGain();
+  feedback.gain.setValueAtTime(0.3, audioCtx.currentTime); // Reduced feedback for less noise
+  
+  const echoFilter = audioCtx.createBiquadFilter();
+  echoFilter.type = "lowpass";
+  echoFilter.frequency.setValueAtTime(800, audioCtx.currentTime); // Filter high frequencies in echo
+
   source.connect(lpf);
   lpf.connect(gain);
   gain.connect(audioCtx.destination);
+  
+  // Audio chain for echo: Gain -> Delay -> EchoFilter -> Feedback -> Delay
+  gain.connect(delay);
+  delay.connect(echoFilter);
+  echoFilter.connect(feedback);
+  feedback.connect(delay);
+  delay.connect(audioCtx.destination);
   source.start();
 
   // Add a sub-bass kick
@@ -1442,7 +1476,8 @@ function playZombieGroan() {
   if (USE_NEW_SOUNDS){
     //zombie_die
     let sound = document.getElementById("zombie_die");
-    sound.currentTime = 0;
+    sound.currentTime = 0.5;
+    sound.volume = 1.5; // Increased volume (max is usually 1.0, but browsers often allow >1.0)
     sound.play();
     return;
   }
@@ -1916,7 +1951,7 @@ function spawnZombie() {
   model.hp = 3; model.lastHit = 0;
   
   // Static hitbox for performance
-  const hitboxGeo = new THREE.BoxGeometry(1.8, 2.5, 1.8);
+  const hitboxGeo = new THREE.BoxGeometry(3.0, 4.0, 3.0);
   const hitbox = new THREE.Mesh(hitboxGeo, new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide }));
   hitbox.position.y = 1;
   model.add(hitbox);
@@ -2248,6 +2283,21 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Digit3') selectWeapon('sniper');
 });
 
+function createFighterJet() {
+  const group = new THREE.Group();
+  // Body
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 4), new THREE.MeshStandardMaterial({ color: 0x555555 }));
+  group.add(body);
+  // Wings
+  const wings = new THREE.Mesh(new THREE.BoxGeometry(6, 0.2, 1), new THREE.MeshStandardMaterial({ color: 0x444444 }));
+  group.add(wings);
+  // Tail
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 0.5), new THREE.MeshStandardMaterial({ color: 0x444444 }));
+  tail.position.set(0, 0.5, -1.5);
+  group.add(tail);
+  return group;
+}
+
 function useAirstrike() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
   if (currentMission === 3) {
@@ -2272,14 +2322,50 @@ function useAirstrike() {
   
   const startPos = camera.position.clone().add(forward.clone().multiplyScalar(5));
   
+  // Fighter jet flyover
+  const jet = createFighterJet();
+  const jetDir = forward.clone();
+  jet.lookAt(jetDir.clone().multiplyScalar(100).add(new THREE.Vector3(0, 50, 0)));
+  jet.position.copy(startPos).add(new THREE.Vector3(0, 50, 0)).add(jetDir.clone().multiplyScalar(-50));
+  scene.add(jet);
+
+  let jetTimer = 0;
+  function animateJet() {
+    jetTimer++;
+    jet.position.add(jetDir.clone().multiplyScalar(2.0)); // Move across
+    if (jetTimer < 100) requestAnimationFrame(animateJet);
+    else scene.remove(jet);
+  }
+  animateJet();
+
   // Sequence of 8 explosions in a line
   for (let i = 0; i < 8; i++) {
     setTimeout(() => {
       const explodePos = startPos.clone().add(forward.clone().multiplyScalar(i * 10));
-      createExplosion(explodePos);
-      playNukeExplosion();
-      shakeAmount = 2.0;
-      
+
+      // Visual bomb drop
+      const bomb = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 1), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+      bomb.position.copy(jet.position);
+      scene.add(bomb);
+
+      let fall = 0;
+      function animateBomb() {
+        fall += 0.5;
+        bomb.position.y -= fall;
+        if (bomb.position.y > explodePos.y) requestAnimationFrame(animateBomb);
+        else {
+          scene.remove(bomb);
+          createExplosion(explodePos);
+          playNukeExplosion();
+          shakeAmount = 2.0;
+          // ... (zombie damage logic)
+        }
+      }
+      animateBomb();
+
+      // ... (zombie damage logic continues below)
+
+      // Damage zombies/boss
       [...zombies].forEach(z => {
         if (z.position.distanceTo(explodePos) < 15) {
           if (z.isBoss) {
@@ -2291,12 +2377,11 @@ function useAirstrike() {
           }
         }
       });
-      
-      if (i === 7) isAirstriking = false;
-    }, 1500 + (i * 200));
-  }
-}
 
+      if (i === 7) isAirstriking = false;
+    }, 500 + (i * 200));
+  }
+  }
 function useNuke() {
   if (audioCtx.state === 'suspended') audioCtx.resume();
   if (currentMission === 3) {
@@ -2390,14 +2475,15 @@ function throwGrenade() {
   
   const now = Date.now();
   if (now - lastGrenadeTime < 5000) {
-    const wait = Math.ceil((5000 - (now - lastGrenadeTime)) / 1000);
-    speak(`Wait ${wait} seconds`, 1, 1.5);
+    playSound("cooldown");
     return;
   }
   
   lastGrenadeTime = now;
   grenadeAmmo--;
   document.getElementById("grenade-count").innerText = grenadeAmmo;
+  
+  playSound("grenade-out");
 
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: grenadeTexture }));
   sprite.position.copy(camera.position);
@@ -2414,7 +2500,6 @@ function throwGrenade() {
   
   scene.add(sprite);
   grenades.push(sprite);
-  speak("Frag out!", 1.1, 1.2);
 }
 window.addEventListener('keyup', (e) => {
   keys[e.code] = false;
@@ -2935,7 +3020,7 @@ function animate(time) {
     if (!anyBotReviving) document.getElementById("revive-hud").style.display = "none";
 
     // Sandbox Spawning
-    if (isSandboxMode && !isNuking && zombies.length < 100) spawnZombie();
+    if (isSandboxMode && !isNuking && zombies.length < 20) spawnZombie();
     
     // Normal Floor Spawning (Don't spawn in mission mode)
     if (!isSandboxMode && !isMissionMode && !isNuking && !isChangingFloor && zombies.length < 5 && currentFloor < 10) {
@@ -3051,10 +3136,40 @@ function animate(time) {
       }
     }
 
+    // Zombie-Bullet Collision
+    console.log(`Bullets loop: ${bullets.length} bullets active.`);
     bullets.forEach((b, i) => {
       b.position.addScaledVector(b.velocity, dt); b.life -= 1 * dt;
-      let hit = false; if (b.position.y < 0) hit = true;
+      let hit = false;
       const bBox = new THREE.Box3().setFromCenterAndSize(b.position, new THREE.Vector3(0.2, 0.2, 0.2));
+      console.log(`Bullet ${i} at ${b.position.x.toFixed(2)}, ${b.position.y.toFixed(2)}, ${b.position.z.toFixed(2)}`);
+      
+      console.log(`Checking ${zombies.length} zombies for collision with bullet ${i}`);
+      zombies.forEach(z => {
+        if (z.hitbox) {
+          // DEBUG: Update hitbox world matrix to ensure correct bounding box
+          z.hitbox.updateMatrixWorld();
+          const zBox = new THREE.Box3().setFromObject(z.hitbox);
+          if (bBox.intersectsBox(zBox)) {
+            hit = true;
+            
+            // Apply custom weapon-specific kill logic
+            if (!z.hitsTaken) z.hitsTaken = 0;
+            z.hitsTaken++;
+            
+            const killsNeeded = (currentWeapon.model === 'pistol') ? 2 : 
+                               (currentWeapon.model === 'ar') ? 3 : 1;
+                               
+            if (z.hitsTaken >= killsNeeded) {
+               console.log("Killing zombie, hits:", z.hitsTaken);
+               killZombie(z);
+            } else {
+               console.log("Zombie hit! Hits:", z.hitsTaken);
+            }
+          }
+        }
+      });
+      
       for (const wall of walls) { if (bBox.intersectsBox(wall)) { hit = true; break; } }
       if (hit || b.life <= 0) { scene.remove(b); bullets.splice(i, 1); }
     });
@@ -3107,10 +3222,15 @@ function animate(time) {
         bots.forEach(bot => {
           const d = bot.position.distanceTo(g.position);
           if (d < 10) {
-            bot.hp -= (10 - d) * 10; updateHelperHUD();
-            if (bot.hp <= 0) { scene.remove(bot); bots = bots.filter(b => b !== bot); updateHelperHUD(); }
+            bot.hp -= (10 - d) * 10;
           }
         });
+        
+        const deadBots = bots.filter(b => b.hp <= 0);
+        deadBots.forEach(b => scene.remove(b));
+        bots = bots.filter(b => b.hp > 0);
+        updateHelperHUD();
+        
         scene.remove(g); grenades.splice(i, 1);
       }
     });
