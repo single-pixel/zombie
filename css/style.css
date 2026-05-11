@@ -1,0 +1,84 @@
+    body { margin: 0; overflow: hidden; background: #1a0d0a; font-family: Arial; }
+    #hud { position: absolute; top: 10px; left: 10px; color: white; z-index: 1000; text-shadow: 2px 2px black; pointer-events: none; }
+    #stats { margin-top: 10px; font-size: 18px; }
+    #hpbar { width: 200px; height: 15px; border: 2px solid white; margin-top: 5px; background: rgba(0,0,0,0.5); }
+    #hp { width: 100%; height: 100%; background: #ff3333; transition: width 0.2s; }
+    #boss-hud { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 60%; display: none; text-align: center; color: white; z-index: 1000; text-shadow: 2px 2px black; }
+    #boss-hp-bg { width: 100%; height: 25px; border: 3px solid white; background: rgba(0,0,0,0.5); margin-top: 10px; }
+    #boss-hp-fill { width: 100%; height: 100%; background: #990000; transition: width 0.1s; }
+    #revive-hud { position: absolute; top: 50%; left: 50%; transform: translate(-50%, 40px); color: white; display: none; text-align: center; z-index: 1000; text-shadow: 2px 2px black; pointer-events: none; }
+    #revive-bar-bg { width: 150px; height: 10px; border: 2px solid white; background: rgba(0,0,0,0.5); margin-top: 5px; }
+    #revive-bar-fill { width: 0%; height: 100%; background: #00ccff; }
+    #helper-hud { position: absolute; top: 10px; right: 10px; color: white; z-index: 1000; text-align: right; pointer-events: none; }
+    #nuke-hud { position: absolute; top: 70px; left: 10px; color: #ffff00; font-weight: bold; font-size: 20px; text-shadow: 2px 2px black; display: none; }
+    .helper-status { margin-bottom: 5px; font-size: 14px; text-shadow: 1px 1px black; }
+    #interaction-hint { position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%); color: white; display: none; font-weight: bold; font-size: 24px; text-shadow: 2px 2px black; z-index: 1000; }
+    .helper-hp-bg { width: 120px; height: 8px; border: 1px solid white; background: rgba(0,0,0,0.5); display: inline-block; margin-left: 5px; }
+    .helper-hp-fill { height: 100%; background: #00ff00; transition: width 0.2s; }
+    #crosshair { position: fixed; top: 50%; left: 50%; width: 20px; height: 20px; border: 2px solid red; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; z-index: 2000; }
+    #sniper-scope {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 100vmax;
+      height: 100vmax;
+      transform: translate(-50%, -50%);
+      background: radial-gradient(circle, transparent 20%, black 21%);
+      display: none;
+      z-index: 2500;
+      pointer-events: none;
+    }
+    #sniper-scope::before, #sniper-scope::after {
+      content: '';
+      position: absolute;
+      background: rgba(255, 255, 255, 0.5);
+    }
+    #sniper-scope::before {
+      top: 50%;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      transform: translateY(-50%);
+    }
+    #sniper-scope::after {
+      left: 50%;
+      top: 0;
+      width: 2px;
+      height: 100%;
+      transform: translateX(-50%);
+    }
+    #death-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(139, 0, 0, 0.9); color: white; display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 3000; cursor: pointer; }
+    #death-screen h1 { font-size: 100px; margin-bottom: 20px; text-shadow: 5px 5px black; }
+    #death-screen p { font-size: 24px; }
+    #instructions { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; text-align: center; background: rgba(0,0,0,0.9); padding: 30px; border-radius: 15px; z-index: 2500; border: 2px solid #555; min-width: 350px; }
+    .weapon-selector { margin: 20px 0; display: flex; justify-content: center; gap: 10px; }
+    .weapon-btn { background: #333; color: white; border: 2px solid #555; padding: 10px; cursor: pointer; transition: all 0.2s; border-radius: 5px; }
+    .weapon-btn:hover { background: #444; border-color: #999; }
+    .weapon-btn.selected { border-color: #ff3333; background: #552222; }
+    #equip-btn { background: #aa0000; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 15px; display: none; }
+    #equip-btn:hover { background: #cc0000; transform: scale(1.05); }
+    #weapon-info { margin-top: 10px; font-size: 14px; color: #aaa; min-height: 20px; }
+    
+    /* Body Cam Overlay */
+    #body-cam {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 2800;
+      box-shadow: inset 0 0 150px rgba(0,0,0,0.8);
+      display: none;
+    }
+    #rec-dot {
+      position: absolute;
+      top: 30px;
+      left: 30px;
+      color: red;
+      font-weight: bold;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 24px;
+      animation: blink 1s infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
